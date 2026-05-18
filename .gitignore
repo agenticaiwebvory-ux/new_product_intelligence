@@ -1,0 +1,47 @@
+# Node dependencies
+node_modules/
+dist/
+build/
+.vite/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+env/
+venv/
+ENV/
+
+# Environment variables (Sensitive)
+.env
+react-dashboard/.env
+.env.local
+.env.*.local
+
+
+
+# Scraper Temporary Files
+**/input/
+**/output/
+scraper_cache.csv
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# backend
+backend_main/backend/app/config/*.db
+backend_main/backend/backend/app/DB/*.db
+*.db
+!hitl.db # Optional: keep auth db if needed, or keep it ignored
+

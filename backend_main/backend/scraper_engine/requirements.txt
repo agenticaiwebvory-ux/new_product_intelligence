@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+httpx
+PyMuPDF
+openpyxl
+python-multipart
+python-dotenv
+redis
