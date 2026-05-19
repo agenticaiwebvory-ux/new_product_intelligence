@@ -686,8 +686,8 @@ const MerchandisingReport = ({ globalStats, initialMode }) => {
               <tr className="bg-slate-50">
                 <th className="p-4 w-[50px] border-b border-slate-200" />
                 <th className="p-4 text-left text-[0.75rem] font-extrabold text-slate-500 border-b border-slate-200 uppercase tracking-wider w-[80px]">ASSET</th>
-                <th className="p-4 text-left text-[0.75rem] font-extrabold text-slate-500 border-b border-slate-200 uppercase tracking-wider min-w-[200px]">STYLE / PRODUCT</th>
-                <th className="p-4 text-left text-[0.75rem] font-extrabold text-slate-500 border-b border-slate-200 uppercase tracking-wider w-[120px]">VENDOR</th>
+                <th className="p-4 text-left text-[0.75rem] font-extrabold text-slate-500 border-b border-slate-200 uppercase tracking-wider w-[200px]">STYLE / PRODUCT</th>
+                <th className="p-4 text-left text-[0.75rem] font-extrabold text-slate-500 border-b border-slate-200 uppercase tracking-wider">VENDOR</th>
                 <th className="p-4 text-center text-[0.75rem] font-extrabold text-slate-500 border-b border-slate-200 uppercase tracking-wider w-[100px]">STATUS</th>
                 <th className="p-4 text-center text-[0.75rem] font-extrabold text-slate-500 border-b border-slate-200 uppercase tracking-wider w-[120px]">INVENTORY</th>
                 <th className="p-4 text-center text-[0.75rem] font-extrabold text-slate-500 border-b border-slate-200 uppercase tracking-wider w-[160px]">VIEWS (30/60/90)</th>
@@ -698,8 +698,8 @@ const MerchandisingReport = ({ globalStats, initialMode }) => {
               <tr className="bg-slate-50">
                 <th className="p-4 w-[50px] border-b border-slate-200" />
                 <th className="p-4 text-left text-[0.75rem] font-extrabold text-slate-500 border-b border-slate-200 uppercase tracking-wider w-[80px]">ASSET</th>
-                <th className="p-4 text-left text-[0.75rem] font-extrabold text-slate-500 border-b border-slate-200 uppercase tracking-wider min-w-[250px]">STYLE / PRODUCT</th>
-                <th className="p-4 text-left text-[0.75rem] font-extrabold text-slate-500 border-b border-slate-200 uppercase tracking-wider w-[120px]">VENDOR</th>
+                <th className="p-4 text-left text-[0.75rem] font-extrabold text-slate-500 border-b border-slate-200 uppercase tracking-wider w-[250px]">STYLE / PRODUCT</th>
+                <th className="p-4 text-left text-[0.75rem] font-extrabold text-slate-500 border-b border-slate-200 uppercase tracking-wider">VENDOR</th>
                 <th className="p-4 text-center text-[0.75rem] font-extrabold text-slate-500 border-b border-slate-200 uppercase tracking-wider w-[160px]">VIEWS (30/60/90)</th>
                 <th className="p-4 text-center text-[0.75rem] font-extrabold text-slate-500 border-b border-slate-200 uppercase tracking-wider w-[160px]">SOLD (30/60/90)</th>
                 <th className="p-4 text-center text-[0.75rem] font-extrabold text-slate-500 border-b border-slate-200 uppercase tracking-wider w-[160px]">RETURNS (30/60/90)</th>
@@ -759,14 +759,14 @@ const MerchandisingReport = ({ globalStats, initialMode }) => {
                           </button>
                         )}
                       </div>
-                      <div className="text-[0.7rem] text-slate-400 font-bold truncate max-w-[200px]" title={p.title}>{p.title}</div>
+                      <div className="text-[0.7rem] text-slate-400 font-bold truncate max-w-[180px]" title={p.title}>{p.title}</div>
                     </div>
                   </td>
 
                   {isMerchMode && (
                     <>
                       <td className="p-5">
-                        <div className="text-[0.8rem] font-bold text-slate-600 uppercase tracking-tight truncate max-w-[120px]" title={p.vendor}>
+                        <div className="text-[0.8rem] font-bold text-slate-600 uppercase tracking-tight truncate max-w-[90px]" title={p.vendor}>
                           {p.vendor || 'Unknown'}
                         </div>
                       </td>
@@ -811,7 +811,7 @@ const MerchandisingReport = ({ globalStats, initialMode }) => {
                     </>
                   ) : (
                     <>
-                      <td className="p-5 text-center">
+                      <td className="p-5">
                         <div className="text-[0.8rem] font-bold text-slate-600 uppercase tracking-tight">
                           {p.vendor || 'Unknown'}
                         </div>
@@ -831,7 +831,7 @@ const MerchandisingReport = ({ globalStats, initialMode }) => {
                         </div>
                       </td>
                       <td className="p-5 text-center">
-                        <div className="flex justify-center gap-10">
+                        <div className="flex justify-center gap-3">
                           <span className="text-[0.8rem] text-slate-500 font-bold opacity-60">{(p.returns_details?.days_30 || 0).toLocaleString()}</span>
                           <span className="text-[0.8rem] text-slate-500 font-bold opacity-60">{(p.returns_details?.days_60 || 0).toLocaleString()}</span>
                           <span className="text-[0.8rem] text-rose-600 font-black scale-105">{(p.returns_details?.days_90 || 0).toLocaleString()}</span>
@@ -925,7 +925,7 @@ const MerchandisingReport = ({ globalStats, initialMode }) => {
                                           }`}
                                       >
                                         <span>{STORE_LABELS[sKey]}</span>
-                                        <span className={`w-2 h-2 rounded-full ${storeObj.status === 'ACTIVE' ? 'bg-emerald-500' : 'bg-amber-400'}`} />
+                                        <span className={`w-2 h-2 rounded-full ${isActive ? 'bg-white' : storeObj.status === 'ACTIVE' ? 'bg-emerald-500' : 'bg-amber-400'}`} />
                                       </button>
                                     );
                                   })}
@@ -1061,7 +1061,7 @@ const MerchandisingReport = ({ globalStats, initialMode }) => {
                                 <div className="bg-rose-50/40 border border-rose-100 p-4 rounded-[1.2rem] flex flex-col justify-center min-w-[140px] hover:shadow-md transition-all">
                                   <div className="text-[0.55rem] font-black text-rose-600/60 uppercase tracking-[0.1em] mb-1.5 flex items-center gap-1.5">
                                     <div className="w-1 h-1 bg-rose-400 rounded-full"></div>
-                                    TOTAL STOCK ({activeStoreKey})
+TOTAL STOCK
                                   </div>
                                   <div className="flex items-center gap-2">
                                     <span className="text-xl font-black text-rose-700">{displayTotalStock} Units</span>
@@ -1159,8 +1159,8 @@ const MerchandisingReport = ({ globalStats, initialMode }) => {
 
                   return (
                     <tr className="bg-slate-50">
-                      <td colSpan={isMerchMode ? 7 : 5} className="p-6">
-                        <div className="bg-white rounded-xl border border-slate-200 p-5 grid gap-6 shadow-sm" style={{ gridTemplateColumns: '230px 1fr' }}>
+                      <td colSpan={isMerchMode ? 9 : 7} className="p-4">
+                        <div className="bg-white rounded-xl border border-slate-200 p-4 grid gap-4 shadow-sm" style={{ gridTemplateColumns: '200px 1fr' }}>
                           {/* Left: image */}
                           <div className="text-center border-r border-slate-100 pr-8">
                             <div className="rounded-xl shadow-sm overflow-hidden bg-slate-100 aspect-[2/3] border border-slate-200">
@@ -1201,49 +1201,151 @@ const MerchandisingReport = ({ globalStats, initialMode }) => {
                           {/* Right: details */}
                           <div className="min-w-0">
                             {/* STORE SWITCHER */}
-                            <div className="mb-5 bg-slate-50 p-2 rounded-xl flex flex-wrap items-center justify-between gap-3 border border-slate-200">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                {STORE_KEYS.map(sKey => {
-                                  const storeObj = p.store_prices?.[sKey];
-                                  if (!storeObj?.linked) return null;
+                            <div className="flex items-start justify-between mb-4">
+                              <div className="flex items-center gap-2">
+                                <h3 className="m-0 text-[1.4rem] font-black text-slate-900 tracking-tight">{p.sku}</h3>
+{getStatusBadge(activeStore.status)}
+                              </div>
+                              <div className="flex flex-col items-end gap-2">
+                                <div className="flex items-center gap-1.5">
+                                  {STORE_KEYS.map(sKey => {
+                                    const storeObj = p.store_prices?.[sKey];
+                                    if (!storeObj?.linked) return null;
                                   const isActive = activeStoreKey === sKey;
                                   return (
                                     <button
                                       key={sKey}
                                       onClick={() => setActiveStoreTabs(prev => ({ ...prev, [p.internal_id]: sKey }))}
-                                      className={`px-5 py-2.5 rounded-xl text-[0.8rem] font-black transition-all flex items-center gap-2.5 cursor-pointer ${isActive
-                                        ? 'bg-slate-900 text-white shadow-lg shadow-slate-900/20 ring-2 ring-slate-900/10'
-                                        : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200/80 shadow-sm'
-                                        }`}
-                                    >
-                                      <span>{STORE_LABELS[sKey]}</span>
-<span className={`w-2 h-2 rounded-full ${storeObj.status === 'ACTIVE' ? 'bg-emerald-500' : 'bg-amber-400'}`} />
-                                    </button>
-                                  );
-                                })}
+                                      className={`px-3 py-1.5 rounded-lg text-[0.7rem] font-black transition-all flex items-center gap-1.5 cursor-pointer active:scale-95 ${isActive ? 'bg-slate-900 text-white shadow-md shadow-slate-200' : 'bg-white text-slate-600 hover:bg-slate-50 hover:shadow-sm border border-slate-200/60'}`}
+                                      >
+                                        <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-white' : storeObj.status === 'ACTIVE' ? 'bg-emerald-500' : 'bg-amber-400'}`} />
+                                        {STORE_LABELS[sKey]}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                                {activeAdminLink && (
+                                  <a
+                                    href={activeAdminLink}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[0.7rem] font-black transition-all shadow-md shadow-indigo-600/20 flex items-center gap-2 no-underline tracking-wide"
+                                  >
+                                    <span>Open in Shopify</span>
+                                    <ArrowUpRight size={13} />
+                                  </a>
+                                )}
                               </div>
-                              {activeAdminLink && (
-                                <a
-                                  href={activeAdminLink}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[0.75rem] font-black transition-all shadow-md shadow-indigo-600/20 flex items-center gap-2 no-underline tracking-wide"
-                                >
-                                  <span>Open in Shopify</span>
-                                  <ArrowUpRight size={14} />
-                                </a>
-                              )}
-                            </div>
-
-                            <div className="flex items-center gap-4 mb-4">
-                              <h3 className="m-0 text-[1.4rem] font-black text-slate-900 tracking-tight">{p.sku}</h3>
-                              {getStatusBadge(p.shopify_status)}
                             </div>
                             <div className="text-[0.85rem] text-slate-500 font-semibold">{p.title}</div>
 
+                            {/* TAGS MANAGEMENT */}
+                            <div className="mt-4 mb-4 bg-slate-50 rounded-xl border border-slate-200 p-4">
+                              <div className="text-[0.6rem] font-black text-slate-400 uppercase tracking-[0.2em] mb-4 flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <div className="p-1 bg-white rounded-lg shadow-sm border border-slate-100">
+                                    <Tag size={12} className="text-slate-400" />
+                                  </div>
+                                  TAGS MANAGEMENT
+                                </div>
+                                {(p.sync_status?.tags || p.needs_sync) && (
+                                  <button
+                                    onClick={() => pushToShopifyMerch(p)}
+                                    disabled={pushingStyle === p.sku}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-[0.65rem] font-black hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 disabled:opacity-50"
+                                  >
+                                    {pushingStyle === p.sku ? <RefreshCw size={10} className="animate-spin" /> : <ArrowUpRight size={10} />}
+                                    PUSH
+                                  </button>
+                                )}
+                              </div>
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div>
+                                  <div className="flex items-center gap-2 mb-3">
+                                    <span className="text-[0.6rem] font-black text-indigo-600 uppercase tracking-[0.15em] bg-indigo-50 px-2.5 py-1 rounded-lg">Top Tags</span>
+                                    {addingTag?.product_id === p.internal_id && addingTag?.category === 'top' ? (
+                                      <input
+                                        autoFocus
+                                        value={newTagInput}
+                                        onChange={(e) => setNewTagInput(e.target.value)}
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter' && newTagInput) {
+                                            handleTagUpdate(p.internal_id, 'top', 'add', newTagInput);
+                                            setAddingTag(null);
+                                            setNewTagInput('');
+                                          }
+                                        }}
+                                        className="text-[0.65rem] px-2 py-1 rounded-lg border-2 border-indigo-200 outline-none w-20"
+                                        placeholder="..."
+                                      />
+                                    ) : (
+                                      <button onClick={() => { setAddingTag({ product_id: p.internal_id, category: 'top' }); setNewTagInput(''); }} className="text-indigo-300 hover:text-indigo-600 transition-colors"><Plus size={14} /></button>
+                                    )}
+                                  </div>
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {p.tags_categorized?.top?.map((tag, idx) => (
+                                      <span key={idx} className="group relative inline-flex items-center gap-1.5 text-[0.65rem] font-black px-2.5 py-1 rounded-lg bg-white border border-indigo-100 text-indigo-700 shadow-sm transition-all hover:border-indigo-300">
+                                        {tag}
+                                        <button onClick={() => handleTagUpdate(p.internal_id, 'top', 'remove', tag)} className="opacity-0 group-hover:opacity-100 text-indigo-400 hover:text-rose-500 transition-all"><X size={12} /></button>
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <div className="flex items-center gap-2 mb-3">
+                                    <span className="text-[0.6rem] font-black text-amber-600 uppercase tracking-[0.15em] bg-amber-50 px-2.5 py-1 rounded-lg flex items-center gap-1"><Flame size={10} /> Bestseller</span>
+                                    {addingTag?.product_id === p.internal_id && addingTag?.category === 'bestseller' ? (
+                                      <input
+                                        autoFocus
+                                        value={newTagInput}
+                                        onChange={(e) => setNewTagInput(e.target.value)}
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter' && newTagInput) {
+                                            handleTagUpdate(p.internal_id, 'bestseller', 'add', newTagInput);
+                                            setAddingTag(null);
+                                            setNewTagInput('');
+                                          }
+                                        }}
+                                        className="text-[0.65rem] px-2 py-1 rounded-lg border-2 border-amber-200 outline-none w-20"
+                                        placeholder="..."
+                                      />
+                                    ) : (
+                                      <button onClick={() => { setAddingTag({ product_id: p.internal_id, category: 'bestseller' }); setNewTagInput(''); }} className="text-amber-300 hover:text-amber-600 transition-colors"><Plus size={14} /></button>
+                                    )}
+                                  </div>
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {p.tags_categorized?.bestseller?.map((tag, idx) => (
+                                      <span key={idx} className="group relative inline-flex items-center gap-1.5 text-[0.65rem] font-black px-2.5 py-1 rounded-lg bg-white border border-amber-100 text-amber-700 shadow-sm transition-all hover:border-amber-300">
+                                        {tag}
+                                        <button onClick={() => handleTagUpdate(p.internal_id, 'bestseller', 'remove', tag)} className="opacity-0 group-hover:opacity-100 text-amber-400 hover:text-rose-500 transition-all"><X size={12} /></button>
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <div className="text-[0.6rem] font-black text-rose-500 uppercase tracking-[0.15em] bg-rose-50 px-2.5 py-1 rounded-lg w-fit mb-3">Special Tags</div>
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {["No PROM", "No Formal", "Discontinued", "Push PROM"].map(tag => {
+                                      const isActive = p.tags_categorized?.special?.includes(tag);
+                                      return (
+                                        <button
+                                          key={tag}
+                                          onClick={() => handleTagUpdate(p.internal_id, 'special', isActive ? 'remove' : 'add', tag)}
+                                          className={`text-[0.6rem] font-black px-2.5 py-1 rounded-lg border-2 transition-all ${isActive ? 'bg-rose-600 border-rose-600 text-white shadow-lg shadow-rose-200' : 'bg-white border-slate-100 text-slate-400 hover:border-rose-200 hover:text-rose-600'}`}
+                                        >
+                                          {tag}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
 
                             {/* Store-specific price and inventory */}
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 mt-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8 mt-4">
                               <div className="bg-white p-4 rounded-xl border border-slate-200 relative">
                                 <div className="text-[0.65rem] font-extrabold text-green-800 tracking-wider mb-2 uppercase flex justify-between">
                                   PRICE ({activeStoreKey})
@@ -1266,18 +1368,12 @@ const MerchandisingReport = ({ globalStats, initialMode }) => {
                               </div>
 
                               <div className="bg-white p-4 rounded-xl border border-slate-200 relative">
-                                <div className="text-[0.65rem] font-extrabold text-red-800 tracking-wider mb-2 uppercase flex justify-between items-center">
-                                  TOTAL STOCK ({activeStoreKey})
-                                  {p.backup_sizes && p.backup_sizes !== p.staged_sizes && <RotateCcw size={14} color="#e11d48" onClick={() => handleRevert('inventory', p)} className="cursor-pointer" title="Revert Inventory Only" />}
+                                <div className="text-[0.65rem] font-extrabold text-red-800 tracking-wider mb-2 uppercase">
+                                  TOTAL STOCK
                                 </div>
-                                {p.is_dirty_inventory && <div className="absolute top-2 right-2 w-2 h-2 bg-amber-400 rounded-full shadow-[0_0_0_2px_white]" title="Sync Required" />}
                                 <div className="text-[1.2rem] font-black text-rose-700">{displayTotalStock} Units</div>
                               </div>
 
-                              <div className="bg-white p-4 rounded-xl border border-slate-200">
-                                <div className="text-[0.65rem] font-extrabold text-slate-600 tracking-wider mb-2 uppercase">STORE PRODUCT</div>
-                                <div className="text-[1.2rem] font-black text-slate-900">{activeStore.product_id || 'Missing'}</div>
-                              </div>
                             </div>
 
                             {/* AVAILABLE COLORS */}
