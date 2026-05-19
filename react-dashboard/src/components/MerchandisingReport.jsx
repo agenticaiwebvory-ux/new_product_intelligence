@@ -925,10 +925,7 @@ const MerchandisingReport = ({ globalStats, initialMode }) => {
                                           }`}
                                       >
                                         <span>{STORE_LABELS[sKey]}</span>
-                                        <span className={`text-[0.6rem] px-2 py-0.5 rounded-md font-extrabold uppercase tracking-wider ${storeObj.status === 'ACTIVE' ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-600 border border-amber-500/20'
-                                          }`}>
-                                          {storeObj.status}
-                                        </span>
+                                        <span className={`w-2 h-2 rounded-full ${storeObj.status === 'ACTIVE' ? 'bg-emerald-500' : 'bg-amber-400'}`} />
                                       </button>
                                     );
                                   })}
@@ -1220,10 +1217,7 @@ const MerchandisingReport = ({ globalStats, initialMode }) => {
                                         }`}
                                     >
                                       <span>{STORE_LABELS[sKey]}</span>
-                                      <span className={`text-[0.6rem] px-2 py-0.5 rounded-md font-extrabold uppercase tracking-wider ${storeObj.status === 'ACTIVE' ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-600 border border-amber-500/20'
-                                        }`}>
-                                        {storeObj.status}
-                                      </span>
+<span className={`w-2 h-2 rounded-full ${storeObj.status === 'ACTIVE' ? 'bg-emerald-500' : 'bg-amber-400'}`} />
                                     </button>
                                   );
                                 })}
