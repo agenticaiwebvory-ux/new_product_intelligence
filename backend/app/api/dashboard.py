@@ -3,21 +3,23 @@ from sqlalchemy.orm import Session
 from ..core.database import get_db
 from ..services.dashboard_service import DashboardService
 from ..core.redis_client import get_cache, set_cache
-
 from ..services.store_service import StoreService
+import logging
 
+logger = logging.getLogger("product-intelligence.api")
 router = APIRouter()
-
 import anyio
 
 @router.get("/stats")
 async def get_dashboard_stats(
     vendor: str = None,
     search: str = None,
+    date_from: str = None,
+    date_to: str = None,
     db: Session = Depends(get_db), 
     response: Response = None
 ):
-    cache_key = f"dashboard:stats:{vendor}:{search}"
+    cache_key = f"dashboard:stats:{vendor}:{search}:{date_from}:{date_to}"
     try:
         # 1. Try Cache
         cached = await get_cache(cache_key)
@@ -29,7 +31,7 @@ async def get_dashboard_stats(
         service = DashboardService(db)
         
         # Run heavy queries in a thread pool
-        stats_data = await anyio.to_thread.run_sync(lambda: service.get_aggregated_stats(vendor=vendor, search=search))
+        stats_data = await anyio.to_thread.run_sync(lambda: service.get_aggregated_stats(vendor=vendor, search=search, date_from=date_from, date_to=date_to))
         designers_data = await anyio.to_thread.run_sync(service.get_designers_with_counts)
         
         result = {
@@ -43,9 +45,10 @@ async def get_dashboard_stats(
         if response: response.headers["X-Cache"] = "MISS"
         return result
     except Exception as e:
-        # Fallback to direct DB if Redis fails
+        # Redis unavailable — log and fall back to direct DB query
+        logger.warning(f"Cache miss (Redis error) for {cache_key}: {e}")
         service = DashboardService(db)
-        stats_data = await anyio.to_thread.run_sync(lambda: service.get_aggregated_stats(vendor=vendor, search=search))
+        stats_data = await anyio.to_thread.run_sync(lambda: service.get_aggregated_stats(vendor=vendor, search=search, date_from=date_from, date_to=date_to))
         designers_data = await anyio.to_thread.run_sync(service.get_designers_with_counts)
         return {
             "stats": stats_data,

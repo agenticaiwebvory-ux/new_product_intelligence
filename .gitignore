@@ -1,47 +1,109 @@
-# Node dependencies
+# ==============================================================================
+# Node.js & Frontend (React Dashboard)
+# ==============================================================================
 node_modules/
 dist/
+dist-ssr/
 build/
 .vite/
+.svelte-kit/
+.next/
+.nuxt/
+*.local
 
-# Python
+# ==============================================================================
+# Python & Backend
+# ==============================================================================
+# Byte-compiled / optimized / DLL files
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
 *.pyo
 *.pyd
+
+# C extensions
+*.so
+
+# Virtual Environments
 .venv/
-env/
 venv/
 ENV/
+env/
+pyvenv.cfg
+.python-version
 
-# Environment variables (Sensitive)
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.noserc
+nosetests.xml
+coverage.xml
+*.cover
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+
+# ==============================================================================
+# Environment Variables & Sensitive Files (Security)
+# ==============================================================================
 .env
-react-dashboard/.env
 .env.local
+.env.development.local
+.env.test.local
+.env.production.local
 .env.*.local
+*.env
+**/.*env
+**/.env
+**/.env.*
 
+# ==============================================================================
+# Database Files (SQLite & temp files)
+# ==============================================================================
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+backend/app/DB/*.db
+backend/app/DB/*.db-shm
+backend/app/DB/*.db-wal
+# If hitl.db or any other DB needs to be explicitly ignored/tracked:
+# !hitl.db
 
-
-# Scraper Temporary Files
+# ==============================================================================
+# Scraper Temporary Files & Outputs
+# ==============================================================================
 **/input/
 **/output/
+**/scraper_engine/output/
 scraper_cache.csv
+**/scraper_cache.csv
+*.csv
+*.xlsx
+# Ignore specific spreadsheet/data files but keep template if any
+# (Note: if you have important CSV/XLSX assets, prefix them with !)
 
+# ==============================================================================
 # Logs
+# ==============================================================================
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
 
-# OS files
+# ==============================================================================
+# OS & Editor Files
+# ==============================================================================
 .DS_Store
 Thumbs.db
 .idea/
 .vscode/
-
-# backend
-backend_main/backend/app/config/*.db
-backend_main/backend/backend/app/DB/*.db
-*.db
-!hitl.db # Optional: keep auth db if needed, or keep it ignored
-
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

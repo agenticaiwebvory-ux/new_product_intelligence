@@ -1,5 +1,5 @@
-import React, { useEffect } from 'react'
-import { Settings, ExternalLink, LogOut, Globe, Menu, ChevronLeft, Search, ShoppingBag } from 'lucide-react'
+import { useEffect } from 'react'
+import { Settings, ExternalLink, LogOut, Globe, Menu, ChevronLeft, Search, ShoppingBag, Home, Package, Store, Tag, GitCommitHorizontal } from 'lucide-react'
 import { useAppDispatch, useAppSelector } from '../app/hooks'
 import { fetchStoreConnections } from '../features/stores/storesSlice'
 
@@ -14,13 +14,13 @@ const Sidebar = ({ activeView, setActiveView, user, onLogout, sidebarLinks = [],
     return () => clearInterval(interval)
   }, [dispatch])
 
-
   const canSeeControlPanel = user?.perm_settings === 1 || user?.role === 'super_admin'
+  const canSeeDashboard = user?.perm_dashboard === 1 || user?.role === 'super_admin' || user?.role === 'admin'
 
   const navBtnBase =
-    'flex items-center gap-3 px-3.5 py-3 rounded-xl font-bold text-[0.95rem] border-none cursor-pointer transition-all w-full whitespace-nowrap'
-  const navBtnActive = 'text-white bg-brand shadow-[0_4px_12px_rgba(168,85,247,0.3)]'
-  const navBtnInactive = 'text-slate-500 bg-transparent hover:bg-slate-100 hover:text-slate-800'
+    'flex items-center gap-3 px-3.5 py-3 rounded-lg font-bold text-[0.9rem] border border-transparent cursor-pointer transition-all w-full whitespace-nowrap'
+  const navBtnActive = 'text-slate-950 bg-slate-100 border-slate-200 shadow-sm'
+  const navBtnInactive = 'text-slate-500 bg-transparent hover:bg-slate-50 hover:text-slate-800'
 
   return (
     <aside
@@ -34,7 +34,7 @@ const Sidebar = ({ activeView, setActiveView, user, onLogout, sidebarLinks = [],
           <div className="text-[1.1rem] font-black text-slate-900 leading-tight">
             TDO
             <br />
-            <span className="bg-gradient-to-r from-brand to-indigo-500 bg-clip-text text-transparent text-[0.85rem]">
+            <span className="text-slate-500 text-[0.78rem]">
               Intelligence
             </span>
           </div>
@@ -55,17 +55,30 @@ const Sidebar = ({ activeView, setActiveView, user, onLogout, sidebarLinks = [],
         <style>{`div::-webkit-scrollbar{width:4px}div::-webkit-scrollbar-track{background:transparent}div::-webkit-scrollbar-thumb{background:#E2E8F0;border-radius:10px}`}</style>
 
 
-
+        {/* Dashboard */}
         <button
           onClick={() => setActiveView('merchandise')}
           title="Merchandising"
           className={`${navBtnBase} ${activeView === 'merchandise' ? navBtnActive : navBtnInactive} ${isCollapsed ? 'justify-center' : 'justify-start'}`}
         >
           <ShoppingBag size={22} className="shrink-0" />
-          {!isCollapsed && <span>Merchandising</span>}
+          {!isCollapsed && <span>Dashboard</span>}
         </button>
 
 
+        {/* Product Changes / Updates — requirement doc: "Product Changes / Updates" */}
+        {canSeeDashboard && (
+          <button
+            onClick={() => setActiveView('changes')}
+            title="Product Changes / Updates"
+            className={`${navBtnBase} ${activeView === 'changes' ? navBtnActive : navBtnInactive} ${isCollapsed ? 'justify-center' : 'justify-start'}`}
+          >
+            <GitCommitHorizontal size={22} className="shrink-0" />
+            {!isCollapsed && <span>Changes</span>}
+          </button>
+        )}
+
+        {/* Product Scraper */}
         <button
           onClick={() => setActiveView('scraper')}
           title="Product Scraper"
@@ -75,7 +88,7 @@ const Sidebar = ({ activeView, setActiveView, user, onLogout, sidebarLinks = [],
           {!isCollapsed && <span>Product Scraper</span>}
         </button>
 
-
+        {/* Control Panel — admin-gated */}
         {canSeeControlPanel && (
           <button
             onClick={() => setActiveView('control_panel')}

@@ -24,10 +24,12 @@ async def get_merchandising_report(
     vendor: str = Query(None),
     search: str = Query(None),
     time_range: str = Query("90"),
+    date_from: str = Query(None),
+    date_to: str = Query(None),
     db: Session = Depends(get_merch_db),
     response: Response = None,
 ):
-    cache_key = f"merch:report:{page}:{limit}:{sort_by}:{vendor}:{search}:{time_range}"
+    cache_key = f"merch:report:{page}:{limit}:{sort_by}:{vendor}:{search}:{time_range}:{date_from}:{date_to}"
     cached = await get_cache(cache_key)
     if cached:
         if response:
@@ -35,7 +37,7 @@ async def get_merchandising_report(
         return cached
 
     service = MerchandisingService(db)
-    result = service.get_report(page=page, limit=limit, sort_by=sort_by, vendor=vendor, search=search, time_range=time_range)
+    result = service.get_report(page=page, limit=limit, sort_by=sort_by, vendor=vendor, search=search, time_range=time_range, date_from=date_from, date_to=date_to)
     await set_cache(cache_key, result, ttl=21600)
     if response:
         response.headers["X-Cache"] = "MISS"
@@ -47,10 +49,12 @@ async def get_merchandising_stats(
     vendor: str = Query(None),
     search: str = Query(None),
     time_range: str = Query("90"),
+    date_from: str = Query(None),
+    date_to: str = Query(None),
     db: Session = Depends(get_merch_db),
     response: Response = None,
 ):
-    cache_key = f"merch:stats:{vendor}:{search}:{time_range}"
+    cache_key = f"merch:stats:{vendor}:{search}:{time_range}:{date_from}:{date_to}"
     cached = await get_cache(cache_key)
     if cached:
         if response:
@@ -58,7 +62,7 @@ async def get_merchandising_stats(
         return cached
 
     service = MerchandisingService(db)
-    result = service.get_stats(vendor=vendor, search=search, time_range=time_range)
+    result = service.get_stats(vendor=vendor, search=search, time_range=time_range, date_from=date_from, date_to=date_to)
     await set_cache(cache_key, result, ttl=21600)
     if response:
         response.headers["X-Cache"] = "MISS"
@@ -71,12 +75,14 @@ def export_merchandising_report(
     vendor: str = Query(None),
     search: str = Query(None),
     time_range: str = Query("90"),
+    date_from: str = Query(None),
+    date_to: str = Query(None),
     db: Session = Depends(get_merch_db),
 ):
     service = MerchandisingService(db)
     filename = f"merchandising_report_{int(time.time())}.csv"
     return Response(
-        content=service.get_csv(sort_by=sort_by, vendor=vendor, search=search, time_range=time_range),
+        content=service.get_csv(sort_by=sort_by, vendor=vendor, search=search, time_range=time_range, date_from=date_from, date_to=date_to),
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename={filename}"},
     )

@@ -1,6 +1,8 @@
 import axios from 'axios';
+import { readJsonStorage } from '../utils/storage';
 
 const API_BASE = import.meta.env.VITE_API_URL;
+const USER_STORAGE_KEY = 'tdo_intel_user';
 
 const api = axios.create({
   baseURL: API_BASE,
@@ -16,10 +18,12 @@ const mercApi = axios.create({
   },
 });
 
+const getSavedUser = () => readJsonStorage(USER_STORAGE_KEY);
+
 // Add a request interceptor to attach JWT token
 api.interceptors.request.use(
   (config) => {
-    const user = JSON.parse(localStorage.getItem('tdo_intel_user'));
+    const user = getSavedUser();
     if (user && user.access_token) {
       config.headers.Authorization = `Bearer ${user.access_token}`;
     }
@@ -42,7 +46,7 @@ api.interceptors.response.use(
 
 // Add auth interceptor to mercApi
 const authInterceptor = (config) => {
-  const user = JSON.parse(localStorage.getItem('tdo_intel_user'));
+  const user = getSavedUser();
   if (user && user.access_token) {
     config.headers.Authorization = `Bearer ${user.access_token}`;
   }
@@ -89,23 +93,27 @@ export const authService = {
 
 export const apiService = {
   // 1. Catalog & Stats
-  async getProducts(vendor = "", page = 1, limit = 50, search = "") {
+  async getProducts(vendor = "", page = 1, limit = 50, search = "", dateFrom = null, dateTo = null) {
     const response = await api.get('/products/', {
       params: {
         vendor: vendor || undefined,
         page,
         limit,
-        search: search || undefined
+        search: search || undefined,
+        date_from: dateFrom || undefined,
+        date_to: dateTo || undefined
       }
     });
     return response.data;
   },
 
-  async getDashboardStats(vendor = "", search = "") {
+  async getDashboardStats(vendor = "", search = "", dateFrom = null, dateTo = null) {
     const response = await api.get('/dashboard/stats', {
       params: {
         vendor: vendor || undefined,
-        search: search || undefined
+        search: search || undefined,
+        date_from: dateFrom || undefined,
+        date_to: dateTo || undefined
       }
     });
     return response.data;
@@ -145,24 +153,13 @@ export const apiService = {
     const response = await api.post(`/products/${productId}/sync/${storeKey}`);
     return response.data;
   },
-
-  async revertUpdate(sku, type = 'all') {
+  async revertUpdate(sku, type = 'all') {
     const response = await api.post(`/products/revert/${sku}?type=${type}`);
     return response.data;
   },
 
-  async adjustInventory(style, sizeDeltas, isAbsolute = true, localOnly = true) {
-    const response = await api.post('/products/inventory/adjust', {
-      style_name: style,
-      size_deltas: sizeDeltas,
-      is_absolute: isAbsolute,
-      local_only: localOnly
-    });
-    return response.data;
-  },
-
   // 4. Merchandising
-  async getMerchProducts({ page = 1, limit = 50, sortBy = null, vendor = null, search = null, timeRange = '90' }) {
+  async getMerchProducts({ page = 1, limit = 50, sortBy = null, vendor = null, search = null, timeRange = '90', dateFrom = null, dateTo = null }) {
     const response = await mercApi.get('/merchandising/report', {
       params: {
         page,
@@ -170,32 +167,50 @@ export const apiService = {
         sort_by: sortBy || undefined,
         vendor: vendor && vendor !== 'ALL' ? vendor : undefined,
         search: search || undefined,
-        time_range: timeRange || '90'
+        time_range: timeRange || '90',
+        date_from: dateFrom || undefined,
+        date_to: dateTo || undefined
       }
     });
     return response.data;
   },
 
-  async getMerchStats({ vendor = null, search = null, timeRange = '90' } = {}) {
+  async getMerchStats({ vendor = null, search = null, timeRange = '90', dateFrom = null, dateTo = null } = {}) {
     const response = await mercApi.get('/merchandising/stats', {
       params: {
         vendor: vendor && vendor !== 'ALL' ? vendor : undefined,
         search: search || undefined,
-        time_range: timeRange || '90'
+        time_range: timeRange || '90',
+        date_from: dateFrom || undefined,
+        date_to: dateTo || undefined
       }
     });
     return response.data;
   },
 
-  async exportMerchReport({ sortBy = null, vendor = null, search = null, timeRange = '90' }) {
-    const params = new URLSearchParams();
-    if (sortBy) params.append('sort_by', sortBy);
-    if (vendor && vendor !== 'ALL') params.append('vendor', vendor);
-    if (search) params.append('search', search);
-    if (timeRange) params.append('time_range', timeRange);
-
-    const url = `${mercApi.defaults.baseURL}/merchandising/export?${params.toString()}`;
-    window.location.href = url;
+  async exportMerchReport({ sortBy = null, vendor = null, search = null, timeRange = '90', dateFrom = null, dateTo = null }) {
+    const response = await mercApi.get('/merchandising/export', {
+      params: {
+        sort_by: sortBy || undefined,
+        vendor: vendor && vendor !== 'ALL' ? vendor : undefined,
+        search: search || undefined,
+        time_range: timeRange || '90',
+        date_from: dateFrom || undefined,
+        date_to: dateTo || undefined
+      },
+      responseType: 'blob'
+    });
+    const contentDisposition = response.headers['content-disposition'] || '';
+    const filenameMatch = contentDisposition.match(/filename="?([^"]+)"?/i);
+    const filename = filenameMatch?.[1] || 'merchandising_report.csv';
+    const url = URL.createObjectURL(response.data);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
   },
 
   async getProductAnalytics(sku, timeframe = '7') {
@@ -209,7 +224,7 @@ export const apiService = {
     try {
       const response = await api.get(`/products/${style_no}/analytics`);
       return response.data;
-    } catch (err) {
+    } catch {
       return null;
     }
   },

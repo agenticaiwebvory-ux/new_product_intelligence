@@ -1,17 +1,8 @@
 import { createAsyncThunk, createSlice } from '@reduxjs/toolkit'
 import { authService } from '../../services/api'
+import { readJsonStorage, writeJsonStorage } from '../../utils/storage'
 
 const USER_STORAGE_KEY = 'tdo_intel_user'
-
-const readSavedUser = () => {
-  try {
-    const raw = localStorage.getItem(USER_STORAGE_KEY)
-    return raw ? JSON.parse(raw) : null
-  } catch {
-    localStorage.removeItem(USER_STORAGE_KEY)
-    return null
-  }
-}
 
 export const logoutUser = createAsyncThunk('auth/logoutUser', async () => {
   try {
@@ -21,7 +12,7 @@ export const logoutUser = createAsyncThunk('auth/logoutUser', async () => {
   }
 })
 
-const savedUser = readSavedUser()
+const savedUser = readJsonStorage(USER_STORAGE_KEY)
 
 const authSlice = createSlice({
   name: 'auth',
@@ -34,7 +25,7 @@ const authSlice = createSlice({
     loginSucceeded(state, action) {
       state.user = action.payload
       state.isLoggedIn = true
-      localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(action.payload))
+      writeJsonStorage(USER_STORAGE_KEY, action.payload)
     },
     sessionCleared(state) {
       state.user = null

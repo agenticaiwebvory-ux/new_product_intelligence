@@ -95,18 +95,10 @@ WDO = STORE_CONFIGS.get("wdo")
 KOS = STORE_CONFIGS.get("kos")
 IM = STORE_CONFIGS.get("im")
 
-# -------------------------------------------
-# SOP Standards — Single Source of Truth
-# -------------------------------------------
-# Consolidated from ai_service.py (30 colors) + audit_service.py (37 colors)
-SOP_COLORS_TO_STRIP = [
-    "Navy", "Black", "Blush", "Silver", "Gold", "Pink", "Red", "Blue", "Green",
-    "Emerald", "Burgundy", "Champagne", "Platinum", "Mauve", "Purple", "White",
-    "Ivory", "Nude", "Teal", "Fuchsia", "Lavender", "Royal Blue", "Dusty Rose",
-    "Mocha", "Charcoal", "Sage", "Lilac", "Coral", "Yellow", "Orange", "Cassis",
-    "Emerald Green", "Royal", "Sky Blue", "Mint", "Peach", "Rust", "Rose Gold"
-]
-
 TOP_TAG_PREFIX = "top:"
 BESTSELLER_TAG_PREFIX = "best:"
 SPECIAL_TAGS = ["No PROM", "No Formal", "Discontinued", "Push PROM"]
+
+# Vendor / mode sentinels — import these everywhere instead of inline literals
+TDO_VENDOR_NAME = "The Dress Outlet"
+MERCH_MODE_KEY = "TDO_MERCH"

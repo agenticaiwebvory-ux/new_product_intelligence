@@ -46,7 +46,6 @@ class ProductBase(BaseModel):
     is_tdo: bool = False
     is_wdo: bool = False
     is_kos: bool = False
-    # sop_issues: List[str] = []
 
 class Product(ProductBase):
     inventory_items: List[Inventory] = []

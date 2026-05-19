@@ -32,10 +32,12 @@ async def get_products(
     page: int = 1,
     limit: int = 50,
     search: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
     db: Session = Depends(get_db),
     response: Response = None
 ):
-    cache_key = f"audit:list:{vendor}:{page}:{limit}:{search}"
+    cache_key = f"audit:list:v2:{vendor}:{page}:{limit}:{search}:{date_from}:{date_to}"
     try:
         # 1. Try Cache
         cached = await get_cache(cache_key)
@@ -48,19 +50,20 @@ async def get_products(
         service = DashboardService(db)
         
         result = await anyio.to_thread.run_sync(
-            lambda: service.get_unified_products(vendor=vendor, page=page, limit=limit, search=search)
+            lambda: service.get_unified_products(vendor=vendor, page=page, limit=limit, search=search, date_from=date_from, date_to=date_to)
         )
         
         await set_cache(cache_key, result, ttl=3600)
         
         if response: response.headers["X-Cache"] = "MISS"
         return result
-    except Exception:
-        # Fallback to direct DB if Redis fails
+    except Exception as e:
+        # Redis unavailable — log and fall back to direct DB query
+        logger.warning(f"Cache miss (Redis error) for {cache_key}: {e}")
         from ..services.dashboard_service import DashboardService
         service = DashboardService(db)
         return await anyio.to_thread.run_sync(
-            lambda: service.get_unified_products(vendor=vendor, page=page, limit=limit, search=search)
+            lambda: service.get_unified_products(vendor=vendor, page=page, limit=limit, search=search, date_from=date_from, date_to=date_to)
         )
 
 class SKUUpdate(BaseModel):
@@ -146,29 +149,6 @@ async def push_update_by_sku(
 async def revert_sync(sku: str, type: str = "all", db: Session = Depends(get_db)):
     prod_tool = ProductTool(db)
     return await prod_tool.revert_to_backup(sku=sku, revert_type=type)
-
-class InventoryAdjust(BaseModel):
-    style_name: str
-    size_deltas: dict
-    is_absolute: bool = False
-    local_only: bool = False
-
-@router.post("/inventory/adjust")
-async def adjust_inventory(data: InventoryAdjust, db: Session = Depends(get_db)):
-    product = db.query(models.InStockDashboard).filter(models.InStockDashboard.style == data.style_name).first()
-    if not product:
-        product = db.query(models.TheDressOutlet).filter(models.TheDressOutlet.style == data.style_name).first()
-        if not product:
-            raise HTTPException(status_code=404, detail="Product not found")
-    
-    inv_tool = InventoryTool(db)
-    await inv_tool.update_stock(
-        sku=data.style_name,
-        sizes=data.size_deltas, 
-        is_absolute=data.is_absolute,
-        stores=[] if data.local_only else ["TDO", "WDO", "KOS", "IM"]
-    )
-    return {"status": "success", "message": "Inventory saved locally." if data.local_only else "Inventory synced to stores."}
 
 @router.post("/{sku}/sync/{store_key}")
 async def sync_to_store(sku: str, store_key: str, db: Session = Depends(get_db)):

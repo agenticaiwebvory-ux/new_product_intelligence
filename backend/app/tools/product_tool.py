@@ -5,7 +5,7 @@ import re
 from sqlalchemy.orm import Session
 from ..models.catalog import Product, InStockDashboard
 from ..integrations.shopify.client import ShopifyClient
-from ..config import settings, STORE_CONFIGS
+from ..config import settings, STORE_CONFIGS, TDO_VENDOR_NAME
 from ..core.exceptions import ProductNotFoundError, AppBaseException, DatabaseError
 
 logger = logging.getLogger(__name__)
@@ -33,8 +33,8 @@ class ProductTool:
             else:
                 dashboard_row = self.db.query(InStockDashboard).get(dashboard_id)
         
-        # If the vendor is "The Dress Outlet", we should also find and update the source table
-        if dashboard_row and dashboard_row.vendor == "The Dress Outlet" and not source_row:
+        # If the vendor is TDO_VENDOR_NAME, also find and update the source table
+        if dashboard_row and dashboard_row.vendor == TDO_VENDOR_NAME and not source_row:
             from ..models.catalog import TheDressOutlet
             source_row = self.db.query(TheDressOutlet).filter(TheDressOutlet.style == dashboard_row.style).first()
         elif source_row and not dashboard_row:
@@ -196,11 +196,11 @@ class ProductTool:
                 shopify_pid = f"gid://shopify/Product/{pid}"
                 content_input = {"id": shopify_pid}
                 
-                # SOP Fields: Title & Description
+                # Core Shopify Content Fields: Title & Description
                 if store_title: content_input["title"] = store_title
                 if store_description: content_input["descriptionHtml"] = store_description
                 
-                # SOP Fields: SEO Meta Data (Title & Description)
+                # Core Shopify Content Fields: SEO Meta Data (Title & Description)
                 if meta_title or meta_description:
                     content_input["seo"] = {}
                     if meta_title: content_input["seo"]["title"] = meta_title

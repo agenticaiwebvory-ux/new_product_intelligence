@@ -9,6 +9,7 @@ from sqlalchemy import case, desc, func, or_
 from sqlalchemy.orm import Session
 
 from ..config import BESTSELLER_TAG_PREFIX, SPECIAL_TAGS, TOP_TAG_PREFIX
+from ..utils.tag_utils import parse_tags_categorized
 from ..models.merchandising import (
     MerchAnalytics,
     MerchProduct,
@@ -32,9 +33,11 @@ class MerchandisingService:
         vendor: Optional[str] = None,
         search: Optional[str] = None,
         time_range: str = "90",
+        date_from: Optional[str] = None,
+        date_to: Optional[str] = None,
     ) -> Dict[str, Any]:
         start_time = time.time()
-        query = self._report_query(vendor=vendor, search=search, sort_by=sort_by, time_range=time_range)
+        query = self._report_query(vendor=vendor, search=search, sort_by=sort_by, time_range=time_range, date_from=date_from, date_to=date_to)
 
         total_count = query.count()
         results = query.offset((page - 1) * limit).limit(limit).all()
@@ -56,8 +59,8 @@ class MerchandisingService:
         )
         return {"total_count": total_count, "page": page, "limit": limit, "data": data}
 
-    def get_stats(self, vendor: Optional[str] = None, search: Optional[str] = None, time_range: str = "90") -> Dict[str, Any]:
-        base_query = self._base_filtered_query(vendor=vendor, search=search)
+    def get_stats(self, vendor: Optional[str] = None, search: Optional[str] = None, time_range: str = "90", date_from: Optional[str] = None, date_to: Optional[str] = None) -> Dict[str, Any]:
+        base_query = self._base_filtered_query(vendor=vendor, search=search, date_from=date_from, date_to=date_to)
         total_styles = base_query.count()
 
         aggregate = (
@@ -73,7 +76,7 @@ class MerchandisingService:
             .join(MerchShopifyProduct, MerchProduct.product_id == MerchShopifyProduct.product_id)
         )
         aggregate = self._apply_exclusion_filters(aggregate)
-        aggregate = self._apply_common_filters(aggregate, vendor=vendor, search=search)
+        aggregate = self._apply_common_filters(aggregate, vendor=vendor, search=search, date_from=date_from, date_to=date_to)
         row = aggregate.first()
 
         vendor_rows = (
@@ -81,7 +84,7 @@ class MerchandisingService:
             .join(MerchProduct, MerchShopifyProduct.product_id == MerchProduct.product_id)
         )
         vendor_rows = self._apply_exclusion_filters(vendor_rows)
-        vendor_rows = self._apply_common_filters(vendor_rows, vendor=vendor, search=search)
+        vendor_rows = self._apply_common_filters(vendor_rows, vendor=vendor, search=search, date_from=date_from, date_to=date_to)
         vendors = [
             {"name": name, "style_count": count}
             for name, count in vendor_rows.group_by(MerchShopifyProduct.vendor).all()
@@ -101,8 +104,8 @@ class MerchandisingService:
             "vendors": vendors,
         }
 
-    def get_csv(self, sort_by: Optional[str] = None, vendor: Optional[str] = None, search: Optional[str] = None, time_range: str = "90") -> str:
-        query = self._report_query(vendor=vendor, search=search, sort_by=sort_by, time_range=time_range)
+    def get_csv(self, sort_by: Optional[str] = None, vendor: Optional[str] = None, search: Optional[str] = None, time_range: str = "90", date_from: Optional[str] = None, date_to: Optional[str] = None) -> str:
+        query = self._report_query(vendor=vendor, search=search, sort_by=sort_by, time_range=time_range, date_from=date_from, date_to=date_to)
         output = io.StringIO()
         writer = csv.DictWriter(
             output,
@@ -161,20 +164,20 @@ class MerchandisingService:
             shopify_product.tags = tag_string
         self.db.commit()
 
-    def _report_query(self, vendor: Optional[str], search: Optional[str], sort_by: Optional[str], time_range: str):
+    def _report_query(self, vendor: Optional[str], search: Optional[str], sort_by: Optional[str], time_range: str, date_from: Optional[str] = None, date_to: Optional[str] = None):
         query = (
             self.db.query(MerchProduct, MerchAnalytics, MerchShopifyProduct)
             .outerjoin(MerchAnalytics, MerchProduct.product_id == MerchAnalytics.product_id)
             .outerjoin(MerchShopifyProduct, MerchProduct.product_id == MerchShopifyProduct.product_id)
         )
         query = self._apply_exclusion_filters(query)
-        query = self._apply_common_filters(query, vendor=vendor, search=search)
+        query = self._apply_common_filters(query, vendor=vendor, search=search, date_from=date_from, date_to=date_to)
         return query.order_by(*self._order_by(sort_by=sort_by, search=search, time_range=time_range))
 
-    def _base_filtered_query(self, vendor: Optional[str], search: Optional[str]):
+    def _base_filtered_query(self, vendor: Optional[str], search: Optional[str], date_from: Optional[str] = None, date_to: Optional[str] = None):
         query = self.db.query(MerchProduct).join(MerchShopifyProduct, MerchProduct.product_id == MerchShopifyProduct.product_id)
         query = self._apply_exclusion_filters(query)
-        return self._apply_common_filters(query, vendor=vendor, search=search)
+        return self._apply_common_filters(query, vendor=vendor, search=search, date_from=date_from, date_to=date_to)
 
     @staticmethod
     def _apply_exclusion_filters(query):
@@ -188,7 +191,7 @@ class MerchandisingService:
         )
 
     @staticmethod
-    def _apply_common_filters(query, vendor: Optional[str], search: Optional[str]):
+    def _apply_common_filters(query, vendor: Optional[str], search: Optional[str], date_from: Optional[str] = None, date_to: Optional[str] = None):
         if vendor and vendor != "ALL":
             query = query.filter(MerchShopifyProduct.vendor == vendor)
         if search:
@@ -203,6 +206,10 @@ class MerchandisingService:
                     MerchShopifyProduct.tags.ilike(search_term),
                 )
             )
+        if date_from:
+            query = query.filter(MerchShopifyProduct.published_at >= date_from)
+        if date_to:
+            query = query.filter(MerchShopifyProduct.published_at <= date_to + "T23:59:59Z")
         return query
 
     @staticmethod
@@ -290,7 +297,7 @@ class MerchandisingService:
             "status": "ACTIVE" if product.product_id else "UNLINKED",
             "total_inventory": product.total_inventory or 0,
             "top_tags": self._parse_top_tags(tags, analytics.notes if analytics else None),
-            "tags_categorized": self._parse_tags_categorized(tags),
+            "tags_categorized": parse_tags_categorized(tags),
             "notes": self._clean_notes(analytics.notes if analytics else ""),
             "variants": variants,
             "units_sold_30_by_variant": sold_maps["30"],
@@ -364,23 +371,8 @@ class MerchandisingService:
                 return int(count)
         return 0
 
-    @staticmethod
-    def _parse_tags_categorized(tags: str) -> Dict[str, List[str]]:
-        result = {"top": [], "bestseller": [], "special": [], "others": []}
-        for raw in (tags or "").split(","):
-            tag = raw.strip()
-            tag_lower = tag.lower()
-            if not tag:
-                continue
-            if any(special.lower() == tag_lower for special in SPECIAL_TAGS):
-                result["special"].append(tag)
-            elif tag_lower.startswith(TOP_TAG_PREFIX.lower()) or tag_lower.startswith("top"):
-                result["top"].append(tag)
-            elif tag_lower.startswith(BESTSELLER_TAG_PREFIX.lower()) or "best seller" in tag_lower or "bestseller" in tag_lower:
-                result["bestseller"].append(tag)
-            else:
-                result["others"].append(tag)
-        return result
+    # _parse_tags_categorized removed — use parse_tags_categorized() from app.utils.tag_utils instead.
+
 
     @staticmethod
     def _parse_top_tags(tags: str, notes: Optional[str] = None) -> List[str]:

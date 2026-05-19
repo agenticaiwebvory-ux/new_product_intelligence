@@ -3,9 +3,9 @@ import time
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
 from ..models import catalog as models
-from ..config import STORE_CONFIGS
+from ..config import STORE_CONFIGS, TDO_VENDOR_NAME, MERCH_MODE_KEY
+from ..utils.tag_utils import parse_tags_categorized
 from .catalog_service import CatalogService
-import hashlib
 import re
 
 class DashboardService:
@@ -14,10 +14,75 @@ class DashboardService:
         self.catalog_service = CatalogService(db)
         self.logger = logging.getLogger("product-intelligence.dashboard")
 
-    def get_aggregated_stats(self, vendor: str = None, search: str = None):
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _build_stat_block(self, model, base_filter, vendor, search, date_from, date_to, *, is_tdo_table=False):
         """
-        Uses the global STORE_CONFIGS to report system health.
-        Simplified to debug loading issues.
+        Builds count / inventory / OOS / missing-link stats for one catalog table.
+        Returns (count, inventory, oos, miss_tdo, miss_wdo, miss_kos, miss_im).
+        """
+        q = self.db.query(model).outerjoin(
+            models.Product, getattr(model, 'tdo_product_id') == models.Product.product_id
+        ).filter(*base_filter)
+
+        if date_from:
+            q = q.filter(models.Product.published_at >= date_from)
+        if date_to:
+            q = q.filter(models.Product.published_at <= date_to + "T23:59:59Z")
+
+        if vendor and vendor not in ('ALL', MERCH_MODE_KEY):
+            if is_tdo_table:
+                # TDO table only holds TDO_VENDOR_NAME; force empty for mismatched vendor
+                if vendor != TDO_VENDOR_NAME:
+                    q = q.filter(model.id == -1)
+            else:
+                q = q.filter(model.vendor == vendor)
+
+        if search:
+            st = f"%{search}%"
+            q = q.filter(or_(
+                model.style.ilike(st),
+                model.vendor.ilike(st),
+                model.local_title.ilike(st),
+            ))
+
+        count = q.count()
+
+        inv_q = self.db.query(func.sum(model.total_inventory)).outerjoin(
+            models.Product, getattr(model, 'tdo_product_id') == models.Product.product_id
+        ).filter(*base_filter)
+        if date_from:
+            inv_q = inv_q.filter(models.Product.published_at >= date_from)
+        if date_to:
+            inv_q = inv_q.filter(models.Product.published_at <= date_to + "T23:59:59Z")
+        if vendor and vendor not in ('ALL', MERCH_MODE_KEY):
+            if is_tdo_table and vendor != TDO_VENDOR_NAME:
+                inv_q = inv_q.filter(model.id == -1)
+            elif not is_tdo_table:
+                inv_q = inv_q.filter(model.vendor == vendor)
+        if search:
+            st = f"%{search}%"
+            inv_q = inv_q.filter(or_(model.style.ilike(st), model.vendor.ilike(st), model.local_title.ilike(st)))
+
+        inv = inv_q.scalar() or 0
+        oos = q.filter(model.total_inventory <= 0).count()
+
+        def _miss(col):
+            return q.filter(or_(col == None, col == 0, col == "")).count()
+
+        return (
+            count, inv, oos,
+            _miss(model.tdo_product_id),
+            _miss(model.wdo_product_id),
+            _miss(model.kos_product_id),
+            _miss(model.im_product_id),
+        )
+
+    def get_aggregated_stats(self, vendor: str = None, search: str = None, date_from: str = None, date_to: str = None):
+        """
+        Aggregates catalog stats across both product tables.
         """
         health = {}
         try:
@@ -27,168 +92,91 @@ class DashboardService:
                     "status": "error" if c.last_error else "ok",
                     "url": c.shop_domain,
                     "error": c.last_error,
-                    "last_checked": c.last_checked_at.isoformat() if hasattr(c.last_checked_at, 'isoformat') else c.last_checked_at
+                    "last_checked": c.last_checked_at.isoformat() if hasattr(c.last_checked_at, 'isoformat') else c.last_checked_at,
                 }
         except Exception as e:
             self.logger.error(f"Health check failed: {e}")
 
-        # 1. Main Dashboard Stats (Exclude TDO to prevent duplicates)
-        main_query = self.db.query(models.InStockDashboard).outerjoin(
-            models.Product, models.InStockDashboard.tdo_product_id == models.Product.product_id
-        ).filter(
-            models.InStockDashboard.vendor != "The Dress Outlet",
-            or_(models.Product.tags == None, ~models.Product.tags.ilike("%discontinued%"))
-        )
-        
-        if vendor and vendor != 'ALL' and vendor != 'TDO_MERCH':
-            main_query = main_query.filter(models.InStockDashboard.vendor == vendor)
-        
-        if search:
-            search_term = f"%{search}%"
-            main_query = main_query.filter(
-                or_(
-                    models.InStockDashboard.style.ilike(search_term),
-                    models.InStockDashboard.vendor.ilike(search_term),
-                    models.InStockDashboard.local_title.ilike(search_term)
-                )
-            )
-        main_count = main_query.count()
-        main_inv = self.db.query(func.sum(models.InStockDashboard.total_inventory)).outerjoin(
-            models.Product, models.InStockDashboard.tdo_product_id == models.Product.product_id
-        ).filter(
-            models.InStockDashboard.vendor != "The Dress Outlet",
-            or_(models.Product.tags == None, ~models.Product.tags.ilike("%discontinued%"))
-        )
-        if vendor and vendor != 'ALL' and vendor != 'TDO_MERCH':
-            main_inv = main_inv.filter(models.InStockDashboard.vendor == vendor)
-        if search:
-            search_term = f"%{search}%"
-            main_inv = main_inv.filter(or_(models.InStockDashboard.style.ilike(search_term), models.InStockDashboard.vendor.ilike(search_term), models.InStockDashboard.local_title.ilike(search_term)))
-        main_inv = main_inv.scalar() or 0
-        main_oos = main_query.filter(models.InStockDashboard.total_inventory <= 0).count()
-
-        # 2. The Dress Outlet Specific Table Stats (ONLY for vendor "The Dress Outlet")
-        tdo_query = self.db.query(models.TheDressOutlet).outerjoin(
-            models.Product, models.TheDressOutlet.tdo_product_id == models.Product.product_id
-        ).filter(
-            models.TheDressOutlet.vendor == "The Dress Outlet",
-            or_(models.Product.tags == None, ~models.Product.tags.ilike("%discontinued%"))
+        # 1. Main catalog (InStockDashboard) — excludes TDO_VENDOR_NAME rows to prevent duplicates
+        main_base = [
+            models.InStockDashboard.vendor != TDO_VENDOR_NAME,
+            or_(models.Product.tags == None, ~models.Product.tags.ilike("%discontinued%")),
+        ]
+        mc, mi, mo, mt, mw, mk, mim = self._build_stat_block(
+            models.InStockDashboard, main_base, vendor, search, date_from, date_to, is_tdo_table=False
         )
 
-        if vendor and vendor != 'ALL' and vendor != 'TDO_MERCH':
-            # TDO table only has vendor "The Dress Outlet", so if another vendor is selected, this becomes empty
-            if vendor != "The Dress Outlet":
-                tdo_query = tdo_query.filter(models.TheDressOutlet.id == -1) 
-        
-        if search:
-            search_term = f"%{search}%"
-            tdo_query = tdo_query.filter(
-                or_(
-                    models.TheDressOutlet.style.ilike(search_term),
-                    models.TheDressOutlet.vendor.ilike(search_term),
-                    models.TheDressOutlet.local_title.ilike(search_term)
-                )
-            )
-        tdo_count = tdo_query.count()
-        
-        tdo_inv_query = self.db.query(func.sum(models.TheDressOutlet.total_inventory)).outerjoin(
-            models.Product, models.TheDressOutlet.tdo_product_id == models.Product.product_id
-        ).filter(
-            models.TheDressOutlet.vendor == "The Dress Outlet",
-            or_(models.Product.tags == None, ~models.Product.tags.ilike("%discontinued%"))
+        # 2. TDO-specific table (TheDressOutlet) — only TDO_VENDOR_NAME rows
+        tdo_base = [
+            models.TheDressOutlet.vendor == TDO_VENDOR_NAME,
+            or_(models.Product.tags == None, ~models.Product.tags.ilike("%discontinued%")),
+        ]
+        tc, ti, to_, tt, tw, tk, tim = self._build_stat_block(
+            models.TheDressOutlet, tdo_base, vendor, search, date_from, date_to, is_tdo_table=True
         )
-        if vendor and vendor != 'ALL' and vendor != 'TDO_MERCH' and vendor != "The Dress Outlet":
-            tdo_inv_query = tdo_inv_query.filter(models.TheDressOutlet.id == -1)
-        if search:
-            search_term = f"%{search}%"
-            tdo_inv_query = tdo_inv_query.filter(or_(models.TheDressOutlet.style.ilike(search_term), models.TheDressOutlet.vendor.ilike(search_term), models.TheDressOutlet.local_title.ilike(search_term)))
-        tdo_inv = tdo_inv_query.scalar() or 0
-        tdo_oos = tdo_query.filter(models.TheDressOutlet.total_inventory <= 0).count()
-
-        # 3. Combine Stats
-        total_count = main_count + tdo_count
-        total_inv = main_inv + tdo_inv
-        total_oos = main_oos + tdo_oos
-
-        # 4. Calculate Missing Links (Where product_id is NULL, 0, or empty)
-        # Main Dashboard Missing
-        main_tdo_miss = main_query.filter(or_(models.InStockDashboard.tdo_product_id == None, models.InStockDashboard.tdo_product_id == 0, models.InStockDashboard.tdo_product_id == "")).count()
-        main_wdo_miss = main_query.filter(or_(models.InStockDashboard.wdo_product_id == None, models.InStockDashboard.wdo_product_id == 0, models.InStockDashboard.wdo_product_id == "")).count()
-        main_kos_miss = main_query.filter(or_(models.InStockDashboard.kos_product_id == None, models.InStockDashboard.kos_product_id == 0, models.InStockDashboard.kos_product_id == "")).count()
-        main_im_miss = main_query.filter(or_(models.InStockDashboard.im_product_id == None, models.InStockDashboard.im_product_id == 0, models.InStockDashboard.im_product_id == "")).count()
-
-        # TDO Table Missing
-        tdo_tdo_miss = tdo_query.filter(or_(models.TheDressOutlet.tdo_product_id == None, models.TheDressOutlet.tdo_product_id == 0, models.TheDressOutlet.tdo_product_id == "")).count()
-        tdo_wdo_miss = tdo_query.filter(or_(models.TheDressOutlet.wdo_product_id == None, models.TheDressOutlet.wdo_product_id == 0, models.TheDressOutlet.wdo_product_id == "")).count()
-        tdo_kos_miss = tdo_query.filter(or_(models.TheDressOutlet.kos_product_id == None, models.TheDressOutlet.kos_product_id == 0, models.TheDressOutlet.kos_product_id == "")).count()
-        tdo_im_miss = tdo_query.filter(or_(models.TheDressOutlet.im_product_id == None, models.TheDressOutlet.im_product_id == 0, models.TheDressOutlet.im_product_id == "")).count()
 
         return {
-            "total_styles": total_count,
-            "total_inventory": total_inv,
-            "out_of_stock": total_oos,
-            "tdo_missing": main_tdo_miss + tdo_tdo_miss,
-            "wdo_missing": main_wdo_miss + tdo_wdo_miss,
-            "kos_missing": main_kos_miss + tdo_kos_miss,
-            "im_missing": main_im_miss + tdo_im_miss,
+            "total_styles": mc + tc,
+            "total_inventory": mi + ti,
+            "out_of_stock": mo + to_,
+            "tdo_missing": mt + tt,
+            "wdo_missing": mw + tw,
+            "kos_missing": mk + tk,
+            "im_missing": mim + tim,
             "store_health": health,
-            "vendors": self.get_designers_with_counts()
+            "vendors": self.get_designers_with_counts(),
         }
 
     def get_designers_with_counts(self):
         vendors_dict = {}
-        
-        # 1. Get all vendors from Main Dashboard (All brands EXCEPT TDO)
+
         counts = self.db.query(
-            models.InStockDashboard.vendor, 
+            models.InStockDashboard.vendor,
             func.count(models.InStockDashboard.id)
-        ).filter(models.InStockDashboard.vendor != "The Dress Outlet").group_by(models.InStockDashboard.vendor).all()
-        
+        ).filter(models.InStockDashboard.vendor != TDO_VENDOR_NAME).group_by(models.InStockDashboard.vendor).all()
+
         for name, count in counts:
             if name and name.strip():
                 vendors_dict[name] = count
 
-        # 2. Add ONLY 'The Dress Outlet' from the dedicated table
-        tdo_count = self.db.query(models.TheDressOutlet).filter(models.TheDressOutlet.vendor == "The Dress Outlet").count()
+        tdo_count = self.db.query(models.TheDressOutlet).filter(models.TheDressOutlet.vendor == TDO_VENDOR_NAME).count()
         if tdo_count > 0:
-            vendors_dict["The Dress Outlet"] = tdo_count
-        
-        # 3. Format for UI
+            vendors_dict[TDO_VENDOR_NAME] = tdo_count
+
         results = []
         for name, count in sorted(vendors_dict.items()):
             results.append({"id": name, "name": name, "style_count": count})
-            
         return results
 
-    def get_unified_products(self, vendor=None, page=1, limit=50, search=None):
+    def get_unified_products(self, vendor=None, page=1, limit=50, search=None, date_from=None, date_to=None):
         start_time = time.time()
-        self.logger.info(f"Fetching unified products (Page: {page}, Limit: {limit}, Search: {search}) for vendor: {vendor}")
+        self.logger.info(f"Fetching unified products (Page: {page}, Limit: {limit}, Search: {search}, DateFrom: {date_from}, DateTo: {date_to}) for vendor: {vendor}")
         # 1. Fetch data via CatalogService (Source of Truth: in_stock_dashboard)
-        unified_data, master_product_map, image_map, stores, total_count = self.catalog_service.get_master_catalog(vendor, page, limit, search)
+        unified_data, master_product_map, image_map, stores, total_count = self.catalog_service.get_master_catalog(
+            vendor, page, limit, search, date_from=date_from, date_to=date_to
+        )
         self.logger.info(f"Catalog fetched: {len(unified_data)} rows in {time.time() - start_time:.2f}s")
 
-
-
-        # 2. BULK FETCH INVENTORY BY PRODUCT ID (Single Store Source of Truth)
-        # Determine the correct product_id column based on the selected vendor
+        # 2. BULK FETCH INVENTORY BY PRODUCT ID (Multi-Store Source of Truth)
         id_column = 'tdo_product_id'
         if vendor:
             v_lower = vendor.lower()
             if 'im' in v_lower: id_column = 'im_product_id'
             elif 'wdo' in v_lower: id_column = 'wdo_product_id'
             elif 'kos' in v_lower: id_column = 'kos_product_id'
-        
+
         target_pids = []
         for row in unified_data:
-            pid = getattr(row, id_column, None)
-            if pid:
-                try: target_pids.append(int(pid))
-                except: pass
-        
+            for col in ['tdo_product_id', 'wdo_product_id', 'kos_product_id', 'im_product_id']:
+                pid = getattr(row, col, None)
+                if pid:
+                    try: target_pids.append(int(pid))
+                    except: pass
+
         inventory_items = []
         if target_pids:
             inventory_items = self.db.query(models.Inventory).filter(models.Inventory.product_id.in_(target_pids)).all()
-        
+
         # Build inventory maps: product_id -> [list of variants]
         inv_map = {}
         for item in inventory_items:
@@ -199,7 +187,7 @@ class DashboardService:
         # BULK FETCH ANALYTICS (from main_kos)
         tdo_ids = [r.tdo_product_id for r in unified_data if getattr(r, 'tdo_product_id', None)]
         styles = [r.style for r in unified_data if getattr(r, 'style', None)]
-        
+
         analytics_map = {}
         if tdo_ids or styles:
             # Query by both Product ID and Style for maximum coverage
@@ -207,14 +195,14 @@ class DashboardService:
             filters = []
             if tdo_ids: filters.append(models.MainKos.product_id.in_(tdo_ids))
             if styles: filters.append(models.MainKos.style.in_(styles))
-            
+
             from sqlalchemy import or_
             kos_items = query.filter(or_(*filters)).all()
-            
+
             for item in kos_items:
                 # Standardize timeframe key
                 tf = str(item.time_frame or "90").lower().replace("d", "")
-                
+
                 # Style-based grouping
                 if item.style:
                     if item.style not in analytics_map: analytics_map[item.style] = {}
@@ -248,19 +236,44 @@ class DashboardService:
                     except:
                         pass
                 
+                store_color_vars = {}
+                store_variants_list = inv_map.get(pid, []) if pid else []
+                store_flat_variants = []
+                
+                for v in store_variants_list:
+                    c = v.color or "Default"
+                    if c not in store_color_vars:
+                        store_color_vars[c] = {}
+                    store_color_vars[c][v.size] = v.inventory
+                    store_flat_variants.append({
+                        "size": v.size,
+                        "inventory": v.inventory,
+                        "color": c,
+                        "sku": v.sku
+                    })
+                
+                store_color_totals = {c: sum(sizes.values()) for c, sizes in store_color_vars.items()}
+                store_total_inv = sum(store_color_totals.values()) if store_color_totals else 0
+                
                 store_data[s.upper()] = {
-                    "linked": pid is not None, 
+                    "linked": pid is not None,
+                    "product_id": pid,
                     "price": master_price,
-                    "inventory": getattr(row, 'total_inventory', 0),
-                    "status": getattr(row, f"{s.lower()}_status", "DRAFT"),
+                    "inventory": store_total_inv,
+                    # Status comes from DB; None means not published yet — never default to DRAFT
+                    "status": getattr(row, f"{s.lower()}_status", None),
                     "title": "",
-                    "description": ""
+                    "description": "",
+                    "color_variants": store_color_vars,
+                    "color_totals": store_color_totals,
+                    "variants": store_flat_variants,
                 }
                 
                 if pid and pid in master_product_map:
                     p_obj = master_product_map[pid]
                     store_data[s.upper()]["price"] = p_obj.price
-                    store_data[s.upper()]["inventory"] = p_obj.total_inventory
+                    if not store_color_totals:
+                        store_data[s.upper()]["inventory"] = p_obj.total_inventory
                     store_data[s.upper()]["title"] = p_obj.title
                     store_data[s.upper()]["description"] = p_obj.body_html
                     store_data[s.upper()]["seo_title"] = p_obj.seo_title
@@ -352,19 +365,13 @@ class DashboardService:
                     if target_color == active_c:
                          size_map = draft_sizes
             
-            # Final Content Preparation (Prioritize TDO, then fallback to others for 'Live' baseline)
-            primary_store = "TDO" if store_data.get("TDO", {}).get("linked") else next((s for s in ["WDO", "KOS", "IM"] if store_data.get(s, {}).get("linked")), "TDO")
+            # Final Content Preparation: keep TDO as the dashboard baseline.
+            primary_store = "TDO"
             
             live_title = store_data.get(primary_store, {}).get("title")
             live_desc = store_data.get(primary_store, {}).get("description")
             live_price = store_data.get(primary_store, {}).get("price")
             live_tdo_inv = store_data.get("TDO", {}).get("inventory", 0)
-
-            # Fallback for price from product_variants table if live_price is empty
-            if not live_price and all_variants:
-                variant_prices = [v.price for v in all_variants if v.price]
-                if variant_prices:
-                    live_price = variant_prices[0]
 
             # Sync Status (SINGLE SOURCE OF TRUTH)
             live_tags = ""
@@ -424,6 +431,10 @@ class DashboardService:
             # Use the most robust Sell Thru (usually 90d) for the flat field
             sell_thru_val = st_details.get("days_90") or st_details.get("days_30") or 0
             table_prefix = "tdo" if hasattr(row, "__tablename__") and row.__tablename__ == 'the_dress_outlet' else "main"
+            sales_30_nested, sales_30_flat = self._parse_variant_sales_map(p_analytics.get("30"), "30")
+            sales_60_nested, sales_60_flat = self._parse_variant_sales_map(p_analytics.get("60"), "60")
+            sales_90_nested, sales_90_flat = self._parse_variant_sales_map(p_analytics.get("90"), "90")
+            sales_7_nested, sales_7_flat = self._parse_variant_sales_map(p_analytics.get("7"), "7")
 
             results.append({
                 "internal_id": f"{table_prefix}_{row.id}",
@@ -438,7 +449,7 @@ class DashboardService:
                 "body_html": row.local_description,
                 "image_url": image_url,
                 "image_count": image_count,
-                "sop_flags": sop_flags,
+                "sop_flags": [],
                 "stock_risk": risk_level,
                 "store_prices": store_data, 
                 "total_inventory": row_total_inventory,
@@ -456,15 +467,20 @@ class DashboardService:
                 "backup_wholesale_price": getattr(row, 'backup_wholesale_price', None),
                 "backup_sizes": getattr(row, 'backup_sizes', None),
                 "sync_status": sync_status,
-                "im_status": getattr(row, 'im_status', 'DRAFT'),
+                "im_status": getattr(row, 'im_status', None),
                 "im_admin_link": getattr(row, 'im_admin_link', None),
-                "tags_categorized": self._parse_tags_categorized(live_tags),
+                "tags_categorized": parse_tags_categorized(live_tags),
                 "notes": getattr(row, 'notes', ""),
                 "admin_links": {s.lower(): getattr(row, f"{s.lower()}_admin_link", None) for s in stores},
                 "pageviews": analytics_data.pageview if analytics_data else 0,
                 "pageviews_details": pv_details,
                 "sell_thru": sell_thru_val,
                 "sell_thru_details": st_details,
+                "sales_breakdown": sales_90_nested,
+                "units_sold_7_by_variant": sales_7_flat,
+                "units_sold_30_by_variant": sales_30_flat,
+                "units_sold_60_by_variant": sales_60_flat,
+                "units_sold_by_variant": sales_90_flat,
                 "most_sold_color": analytics_data.most_sold_color if analytics_data else None,
                 "most_sold_size": analytics_data.most_sold_size if analytics_data else None,
                 "analytics_notes": self._humanize_notes(analytics_data.notes) if analytics_data else ""
@@ -525,6 +541,45 @@ class DashboardService:
             return summary
         except:
             return notes
+
+    def _parse_variant_sales_map(self, analytics_item, timeframe: str):
+        if not analytics_item or not analytics_item.notes:
+            return {}, {}
+
+        notes = analytics_item.notes.strip()
+        if not notes.startswith("{"):
+            return {}, {}
+
+        try:
+            import json
+            data = json.loads(notes)
+            breakdown = data.get(f"{timeframe}d") or data.get(timeframe) or data.get("sku_breakdown", {})
+            if not isinstance(breakdown, dict):
+                return {}, {}
+
+            nested = {}
+            flat = {}
+            for key, count in breakdown.items():
+                parts = str(key).split("-")
+                if len(parts) >= 3:
+                    color = "-".join(parts[1:-1]).strip()
+                    size = parts[-1].strip()
+                else:
+                    color = "Default"
+                    size = str(key).strip()
+
+                try:
+                    sold_count = int(count)
+                except (TypeError, ValueError):
+                    sold_count = 0
+
+                nested.setdefault(color, {})[size] = sold_count
+                flat[f"{color.lower()}-{size.lower()}"] = sold_count
+
+            return nested, flat
+        except Exception as e:
+            self.logger.warning(f"Variant sales parse failed for timeframe {timeframe}: {e}")
+            return {}, {}
 
     def get_style_analytics(self, sku: str, timeframe: str = "7"):
         """
@@ -634,27 +689,4 @@ class DashboardService:
             "analytics_notes": notes
         }
 
-    def _parse_tags_categorized(self, tags_str: str) -> dict:
-        """
-        Parses a flat Shopify tag string into 3 tiers.
-        """
-        # Note: In a production environment, these should be imported from a shared config
-        TOP_TAG_PREFIX = "top:"
-        BESTSELLER_TAG_PREFIX = "best:"
-        SPECIAL_TAGS = ["No PROM", "No Formal", "Discontinued", "Push PROM"]
-        
-        result = {"top": [], "bestseller": [], "special": []}
-        if not tags_str:
-            return result
-        for raw in tags_str.split(","):
-            tag = raw.strip()
-            if not tag:
-                continue
-            tag_lower = tag.lower()
-            if any(s.lower() == tag_lower for s in SPECIAL_TAGS):
-                result["special"].append(tag)
-            elif tag_lower.startswith(TOP_TAG_PREFIX.lower()):
-                result["top"].append(tag[len(TOP_TAG_PREFIX):].strip())
-            elif tag_lower.startswith(BESTSELLER_TAG_PREFIX.lower()):
-                result["bestseller"].append(tag[len(BESTSELLER_TAG_PREFIX):].strip())
-        return result
+    # _parse_tags_categorized removed — use parse_tags_categorized() from app.utils.tag_utils instead.

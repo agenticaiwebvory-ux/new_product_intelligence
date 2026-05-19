@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react'
-import { Plus, Trash2, Shield, UserPlus, Link as LinkIcon, Globe, Check, X, LayoutDashboard, Settings, ChevronDown } from 'lucide-react'
+import { Fragment, useState, useEffect } from 'react'
+import { Trash2, Shield, UserPlus, Link as LinkIcon, Check, X, LayoutDashboard, Settings, ChevronDown } from 'lucide-react'
 import { authService } from '../services/api'
 import toast from 'react-hot-toast'
 import { useAppDispatch, useAppSelector } from '../app/hooks'
@@ -54,7 +54,7 @@ const ControlPanel = ({ user: currentUser, sidebarLinks, setSidebarLinks }) => {
       if (data.success) { toast.success('User registered successfully!'); setRegName(''); setRegPass(''); dispatch(fetchUsers()) }
       else toast.error(data.message || 'Registration failed')
     } catch (err) {
-      toast.error('Error registering user')
+      toast.error('Error registering user: ' + (err.response?.data?.detail || err.message))
     } finally {
       setIsRegistering(false)
     }
@@ -74,7 +74,7 @@ const ControlPanel = ({ user: currentUser, sidebarLinks, setSidebarLinks }) => {
       const data = await authService.updateUser(id, editRoleValue, editPermissions, editPassword)
       if (data.success) { dispatch(fetchUsers()); setEditingUserId(null); toast.success('User updated successfully') }
     } catch (err) {
-      toast.error('Failed to update user')
+      toast.error('Failed to update user: ' + (err.response?.data?.detail || err.message))
     }
   }
 
@@ -120,7 +120,7 @@ const ControlPanel = ({ user: currentUser, sidebarLinks, setSidebarLinks }) => {
                 <tr key={idx} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
                   <td className="px-4 py-[18px] font-bold text-slate-900">{link.label}</td>
                   <td className="px-4 py-[18px]"><code className="bg-slate-100 px-2 py-1 rounded-md text-[0.85rem] text-brand">{link.url}</code></td>
-                  <td className="px-4 py-[18px]">{link.icon === 'shopify' ? '🛍️ Shopify' : '🔗 Default'}</td>
+                  <td className="px-4 py-[18px]">{link.icon === 'shopify' ? 'Shopify' : 'Default'}</td>
                   <td className="px-4 py-[18px] text-right">
                     <button onClick={() => handleDeleteLink(idx)} className="bg-red-50 border border-red-200 p-2 rounded-xl text-red-600 cursor-pointer hover:bg-red-100 transition-all">
                       <Trash2 size={16} />
@@ -145,8 +145,8 @@ const ControlPanel = ({ user: currentUser, sidebarLinks, setSidebarLinks }) => {
             <label className={labelCls}>Icon</label>
             <div className="relative flex items-center">
               <select value={newLinkIcon} onChange={(e) => setNewLinkIcon(e.target.value)} className={selectCls}>
-                <option value="link">🔗 Default Link</option>
-                <option value="shopify">🛍️ Shopify Admin</option>
+                <option value="link">Default Link</option>
+                <option value="shopify">Shopify Admin</option>
               </select>
               <ChevronDown size={14} color="#64748b" className="absolute right-3 pointer-events-none" />
             </div>
@@ -180,7 +180,7 @@ const ControlPanel = ({ user: currentUser, sidebarLinks, setSidebarLinks }) => {
               {loadingUsers ? (
                 <tr><td colSpan="4" className="px-4 py-8 text-center text-slate-400">Loading team members...</td></tr>
               ) : users.map(u => (
-                <React.Fragment key={u.id}>
+                <Fragment key={u.id}>
                   <tr className={`border-b border-slate-100 ${editingUserId === u.id ? 'bg-violet-50/30' : 'hover:bg-slate-50'} transition-colors`}>
                     <td className="px-4 py-[18px] font-bold text-slate-900">{u.username}</td>
                     <td className="px-4 py-[18px]">
@@ -252,7 +252,7 @@ const ControlPanel = ({ user: currentUser, sidebarLinks, setSidebarLinks }) => {
                       </td>
                     </tr>
                   )}
-                </React.Fragment>
+                </Fragment>
               ))}
             </tbody>
           </table>
@@ -269,7 +269,7 @@ const ControlPanel = ({ user: currentUser, sidebarLinks, setSidebarLinks }) => {
               </div>
               <div>
                 <label className={labelCls}>Password</label>
-                <input type="password" placeholder="••••••••" value={regPass} onChange={(e) => setRegPass(e.target.value)} className={inputCls} />
+                <input type="password" placeholder="Password" value={regPass} onChange={(e) => setRegPass(e.target.value)} className={inputCls} />
               </div>
               <div>
                 <label className={labelCls}>Default Role</label>

@@ -1,20 +1,11 @@
 import { createSlice } from '@reduxjs/toolkit'
+import { readJsonStorage, writeJsonStorage } from '../../utils/storage'
 
 const LINKS_STORAGE_KEY = 'tdo_sidebar_links'
 
-const readSidebarLinks = () => {
-  try {
-    const raw = localStorage.getItem(LINKS_STORAGE_KEY)
-    return raw ? JSON.parse(raw) : []
-  } catch {
-    localStorage.removeItem(LINKS_STORAGE_KEY)
-    return []
-  }
-}
-
 const persistLinks = (links) => {
   if (links.length > 0) {
-    localStorage.setItem(LINKS_STORAGE_KEY, JSON.stringify(links))
+    writeJsonStorage(LINKS_STORAGE_KEY, links)
   } else {
     localStorage.removeItem(LINKS_STORAGE_KEY)
   }
@@ -25,7 +16,7 @@ const layoutSlice = createSlice({
   initialState: {
     activeView: 'merchandise',
     isSidebarCollapsed: false,
-    sidebarLinks: readSidebarLinks(),
+    sidebarLinks: readJsonStorage(LINKS_STORAGE_KEY, []),
   },
   reducers: {
     setActiveView(state, action) {

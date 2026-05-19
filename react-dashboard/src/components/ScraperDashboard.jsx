@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   Upload,
   Search,
@@ -7,15 +7,8 @@ import {
   AlertCircle,
   Download,
   FileText,
-  Trash2,
   Play,
   Clock,
-  ExternalLink,
-  ChevronRight,
-  Eye,
-  TrendingUp,
-  Palette,
-  Maximize
 } from 'lucide-react';
 import axios from 'axios';
 
@@ -29,18 +22,7 @@ const ScraperDashboard = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
 
-  // Poll for job updates
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const activeJobs = jobs.filter(j => j.status === 'running' || j.status === 'queued');
-      if (activeJobs.length > 0) {
-        refreshJobs();
-      }
-    }, 2000);
-    return () => clearInterval(interval);
-  }, [jobs]);
-
-  const refreshJobs = async () => {
+  const refreshJobs = useCallback(async () => {
     const updatedJobs = await Promise.all(jobs.map(async (job) => {
       if (job.status === 'running' || job.status === 'queued') {
         try {
@@ -54,7 +36,18 @@ const ScraperDashboard = () => {
       return job;
     }));
     setJobs(updatedJobs);
-  };
+  }, [jobs]);
+
+  // Poll for job updates
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const activeJobs = jobs.filter(j => j.status === 'running' || j.status === 'queued');
+      if (activeJobs.length > 0) {
+        refreshJobs();
+      }
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [jobs, refreshJobs]);
 
   const handleFileChange = (e) => {
     if (e.target.files && e.target.files[0]) {
@@ -274,7 +267,7 @@ const ScraperDashboard = () => {
                       </div>
                       <div>
                         <div className="text-[0.9rem] font-black text-slate-900">{job.vendor_name}</div>
-                        <div className="text-[0.7rem] text-slate-400 font-bold tracking-wide">{job.file} • ID: {job.job_id.slice(0, 8)}</div>
+                        <div className="text-[0.7rem] text-slate-400 font-bold tracking-wide">{job.file} - ID: {job.job_id.slice(0, 8)}</div>
                       </div>
                     </div>
                     <div className={`px-3 py-1 rounded-full text-[0.7rem] font-black uppercase tracking-wider ${getStatusBg(job.status)} ${getStatusColor(job.status)}`}>

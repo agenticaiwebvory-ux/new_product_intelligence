@@ -2,7 +2,7 @@ import time
 from sqlalchemy import or_, case
 from sqlalchemy.orm import Session
 from ..models.catalog import Product, Inventory, InStockDashboard, ProductAsset, TheDressOutlet, MainKos
-from ..config import STORE_CONFIGS, settings
+from ..config import STORE_CONFIGS, settings, TDO_VENDOR_NAME
 import logging
 
 logger = logging.getLogger(__name__)
@@ -11,12 +11,12 @@ class CatalogService:
     def __init__(self, db: Session):
         self.db = db
 
-    def get_master_catalog(self, vendor=None, page=1, limit=50, search=None):
+    def get_master_catalog(self, vendor=None, page=1, limit=50, search=None, date_from=None, date_to=None):
         start_time = time.time()
         offset = (page - 1) * limit
         logger.info(f"get_master_catalog started (Page: {page}, Limit: {limit}, Search: {search}) for vendor: {vendor}")
         """
-        OPTIMIZED: Supports server-side pagination and search.
+        OPTIMIZED: Supports server-side pagination, search, and date range filtering on products.published_at.
         """
         # 1. Get active stores
         stores = list(STORE_CONFIGS.keys()) if STORE_CONFIGS else []
@@ -28,19 +28,24 @@ class CatalogService:
         unified_data = []
 
         # 2. Base Dashboard Query
-        if vendor == "The Dress Outlet":
+        if vendor == TDO_VENDOR_NAME:
             # Join with MainKos for pageviews AND Product for live tags
             query = self.db.query(TheDressOutlet).outerjoin(
                 MainKos, TheDressOutlet.tdo_product_id == MainKos.product_id
             ).outerjoin(
                 Product, TheDressOutlet.tdo_product_id == Product.product_id
             ).filter(
-                TheDressOutlet.vendor == "The Dress Outlet",
+                TheDressOutlet.vendor == TDO_VENDOR_NAME,
                 TheDressOutlet.style.isnot(None),
                 ~TheDressOutlet.style.like("D/%"),
                 ~TheDressOutlet.style.like("S/%"),
                 or_(Product.tags == None, ~Product.tags.ilike("%discontinued%"))
             )
+
+            if date_from:
+                query = query.filter(Product.published_at >= date_from)
+            if date_to:
+                query = query.filter(Product.published_at <= date_to + "T23:59:59Z")
 
             if search:
                 search_term = f"%{search}%"
@@ -70,6 +75,11 @@ class CatalogService:
                 or_(Product.tags == None, ~Product.tags.ilike("%discontinued%"))
             )
 
+            if date_from:
+                base_query = base_query.filter(Product.published_at >= date_from)
+            if date_to:
+                base_query = base_query.filter(Product.published_at <= date_to + "T23:59:59Z")
+
             if vendor:
                 if vendor == "Unassigned / Missing Vendor":
                     base_query = base_query.filter((InStockDashboard.vendor == None) | (InStockDashboard.vendor == ""))
@@ -89,16 +99,21 @@ class CatalogService:
 
             if not vendor:
                 # Combined case (Standard Catalog + TDO Catalog)
-                q1 = base_query.filter(InStockDashboard.vendor != "The Dress Outlet")
+                q1 = base_query.filter(InStockDashboard.vendor != TDO_VENDOR_NAME)
                 q2 = self.db.query(TheDressOutlet).outerjoin(
                     Product, TheDressOutlet.tdo_product_id == Product.product_id
                 ).filter(
-                    TheDressOutlet.vendor == "The Dress Outlet",
+                    TheDressOutlet.vendor == TDO_VENDOR_NAME,
                     TheDressOutlet.style.isnot(None),
                     ~TheDressOutlet.style.like("D/%"),
                     ~TheDressOutlet.style.like("S/%"),
                     or_(Product.tags == None, ~Product.tags.ilike("%discontinued%"))
                 )
+
+                if date_from:
+                    q2 = q2.filter(Product.published_at >= date_from)
+                if date_to:
+                    q2 = q2.filter(Product.published_at <= date_to + "T23:59:59Z")
 
                 if search:
                     search_term = f"%{search}%"

@@ -1,15 +1,17 @@
-import React from 'react';
 import { Filter, ChevronDown, Search } from 'lucide-react';
 import { useAppSelector } from '../app/hooks';
 
-const Header = ({ title = "PRODUCT INTELLIGENCE", search, setSearch, activeStoreFilter, setActiveStoreFilter, showStoreFilter = true }) => {
+const Header = ({ title = "PRODUCT WORKSPACE", eyebrow = "Operations Hub", search, setSearch, activeStoreFilter, setActiveStoreFilter, showStoreFilter = true }) => {
   const storeKeys = useAppSelector((state) => Object.keys(state.stores.connections))
 
   return (
-    <header className="sticky top-0 z-[1000] bg-white/95 backdrop-blur-md pt-6 pb-4 -mx-8 px-8 mb-4 flex items-center border-b border-slate-200/60">
-      <div className="flex items-center gap-4">
-        <h1 className="text-[1.2rem] font-black tracking-widest text-slate-900 m-0">{title}</h1>
-        <span className="text-[0.7rem] font-extrabold text-slate-400 tracking-[0.1em] bg-slate-100 px-2 py-0.5 rounded">HUB</span>
+    <header className="sticky top-0 z-[1000] bg-white/95 backdrop-blur-md pt-5 pb-4 -mx-8 px-8 flex items-center border-b border-slate-200/60">
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center gap-3">
+          <h1 className="text-[1.15rem] font-black tracking-widest text-slate-900 m-0">{title}</h1>
+          <span className="text-[0.62rem] font-extrabold text-slate-500 tracking-[0.12em] bg-slate-100 px-2 py-0.5 rounded-md uppercase">{eyebrow}</span>
+        </div>
+        <p className="m-0 text-[0.75rem] font-semibold text-slate-400">Catalog operations, store inventory, and merchandising signals in one workspace.</p>
       </div>
       <div className="flex gap-4 items-center flex-1 justify-end">
         {showStoreFilter && (
