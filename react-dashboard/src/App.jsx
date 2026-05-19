@@ -4,43 +4,17 @@ import LoginPage from './components/LoginPage'
 import ControlPanel from './components/ControlPanel'
 import ScraperDashboard from './components/ScraperDashboard'
 import MerchandisingReport from './components/MerchandisingReport'
-import { RefreshCw, Home, Package, Store, Tag, GitCommitHorizontal, Construction } from 'lucide-react'
+import DashboardHome from './components/DashboardHome'
+import ProductsPage from './components/ProductsPage'
+import StoresPage from './components/StoresPage'
+import TagsPage from './components/TagsPage'
+import ChangesPage from './components/ChangesPage'
+import { RefreshCw } from 'lucide-react'
 import { Toaster } from 'react-hot-toast'
 import { useAppDispatch, useAppSelector } from './app/hooks'
 import { loginSucceeded, logoutUser } from './features/auth/authSlice'
 import { clearDashboardStats, fetchDashboardStats } from './features/dashboard/dashboardSlice'
 import { setActiveView, setSidebarCollapsed, setSidebarLinks } from './features/layout/layoutSlice'
-
-// ---------------------------------------------------------------------------
-// PlaceholderView — shown for sidebar sections not yet built into full views
-// ---------------------------------------------------------------------------
-const VIEW_META = {
-  home: { icon: Home, label: 'Dashboard Home', desc: 'High-level KPI overview and store health summary.' },
-  products: { icon: Package, label: 'Products', desc: 'Full multi-store product catalog browser.' },
-  stores: { icon: Store, label: 'Stores', desc: 'Per-store configuration, credentials, and live connection status.' },
-  tags: { icon: Tag, label: 'Tags', desc: 'Tag management and bulk tag operations across all stores.' },
-  changes: { icon: GitCommitHorizontal, label: 'Product Changes / Updates', desc: 'Audit log of product edits, price changes, and Shopify syncs.' },
-}
-
-const PlaceholderView = ({ view }) => {
-  const meta = VIEW_META[view] || { icon: Construction, label: view, desc: 'This section is under development.' }
-  const Icon = meta.icon
-  return (
-    <div className="flex items-center justify-center min-h-[calc(100vh-100px)]">
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-12 max-w-md w-full text-center">
-        <div className="w-16 h-16 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center mx-auto mb-6">
-          <Icon size={32} className="text-indigo-500" />
-        </div>
-        <h2 className="text-xl font-black text-slate-900 mb-2">{meta.label}</h2>
-        <p className="text-slate-400 text-sm font-medium leading-relaxed mb-6">{meta.desc}</p>
-        <span className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-600 text-xs font-black uppercase tracking-widest">
-          <Construction size={12} />
-          Coming Soon
-        </span>
-      </div>
-    </div>
-  )
-}
 
 function App() {
   const dispatch = useAppDispatch()
@@ -114,10 +88,12 @@ function App() {
             setSidebarLinks={(links) => dispatch(setSidebarLinks(links))}
           />
         )}
-        {/* New sidebar sections — placeholder views until dedicated components are built */}
-        {['home', 'products', 'stores', 'tags', 'changes'].includes(activeView) && (
-          <PlaceholderView view={activeView} />
-        )}
+        {/* New sidebar sections */}
+        {activeView === 'home' && <DashboardHome />}
+        {activeView === 'products' && <ProductsPage />}
+        {activeView === 'stores' && <StoresPage />}
+        {activeView === 'tags' && <TagsPage />}
+        {activeView === 'changes' && <ChangesPage />}
       </main>
     </div>
   )

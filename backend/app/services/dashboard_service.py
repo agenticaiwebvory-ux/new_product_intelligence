@@ -3,6 +3,7 @@ import time
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
 from ..models import catalog as models
+from ..models.merchandising import MerchAnalytics
 from ..config import STORE_CONFIGS, TDO_VENDOR_NAME, MERCH_MODE_KEY
 from ..utils.tag_utils import parse_tags_categorized
 from .catalog_service import CatalogService
@@ -213,6 +214,18 @@ class DashboardService:
                     pid_str = str(item.product_id)
                     if pid_str not in analytics_map: analytics_map[pid_str] = {}
                     analytics_map[pid_str][tf] = item
+
+        # BULK FETCH RETURNS DATA (from MerchAnalytics in tdo_merch.db)
+        from ..core.database import MerchSessionLocal
+        returns_map = {}
+        if styles:
+            merch_session = MerchSessionLocal()
+            try:
+                merch_rows = merch_session.query(MerchAnalytics).filter(MerchAnalytics.style_no.in_(styles)).all()
+                for mr in merch_rows:
+                    returns_map[mr.style_no] = mr
+            finally:
+                merch_session.close()
 
         results = []
         for row in unified_data:
@@ -483,7 +496,17 @@ class DashboardService:
                 "units_sold_by_variant": sales_90_flat,
                 "most_sold_color": analytics_data.most_sold_color if analytics_data else None,
                 "most_sold_size": analytics_data.most_sold_size if analytics_data else None,
-                "analytics_notes": self._humanize_notes(analytics_data.notes) if analytics_data else ""
+                "analytics_notes": self._humanize_notes(analytics_data.notes) if analytics_data else "",
+                "returns_details": {
+                    "days_30": returns_map[row.style].return_30 if row.style in returns_map else 0,
+                    "days_60": returns_map[row.style].return_60 if row.style in returns_map else 0,
+                    "days_90": returns_map[row.style].return_90 if row.style in returns_map else 0,
+                },
+                "return_rates_details": {
+                    "days_30": float(returns_map[row.style].returnrate_30) if row.style in returns_map and returns_map[row.style].returnrate_30 is not None else None,
+                    "days_60": float(returns_map[row.style].returnrate_60) if row.style in returns_map and returns_map[row.style].returnrate_60 is not None else None,
+                    "days_90": float(returns_map[row.style].returnrate_90) if row.style in returns_map and returns_map[row.style].returnrate_90 is not None else None,
+                },
             })
         
         self.logger.info(f"Unified products returned {len(results)} rows in {time.time() - start_time:.2f}s")
@@ -687,6 +710,121 @@ class DashboardService:
             "most_sold_size": analytics_data.most_sold_size,
             "sales_breakdown": sales_breakdown,
             "analytics_notes": notes
+        }
+
+    # ------------------------------------------------------------------
+    # Changed products (pending backup diffs)
+    # ------------------------------------------------------------------
+    def get_changed_products(self, page=1, limit=50, search=None, sort_by="newest"):
+        """Return products where backup data differs from current values."""
+        from sqlalchemy import or_
+
+        def _diff_fields(row):
+            """Build a diff dict for a dashboard row."""
+            changes = {}
+            pairs = [
+                ("title", "local_title", "backup_title"),
+                ("retail_price", "retail_price", "backup_retail_price"),
+                ("wholesale_price", "wholesale_price", "backup_wholesale_price"),
+                ("sizes", "sizes", "backup_sizes"),
+                ("total_inventory", "total_inventory", "backup_total_inventory"),
+            ]
+            for field, current_col, backup_col in pairs:
+                current = getattr(row, current_col, None)
+                backup = getattr(row, backup_col, None)
+                if backup is not None and current != backup:
+                    changes[field] = {"before": backup, "after": current}
+            return changes
+
+        offset = (page - 1) * limit
+
+        def _backup_exists_filter(model):
+            return or_(
+                model.backup_retail_price != getattr(model, "retail_price"),
+                model.backup_wholesale_price != getattr(model, "wholesale_price"),
+                model.backup_total_inventory != getattr(model, "total_inventory"),
+                model.backup_sizes != getattr(model, "sizes"),
+                model.backup_title != getattr(model, "local_title"),
+            )
+
+        # Determine sort order
+        if sort_by == "oldest":
+            order = models.InStockDashboard.backup_created_at.asc().nullslast()
+            order_tdo = models.TheDressOutlet.backup_created_at.asc().nullslast()
+        else:
+            order = models.InStockDashboard.backup_created_at.desc().nullslast()
+            order_tdo = models.TheDressOutlet.backup_created_at.desc().nullslast()
+
+        # Query InStockDashboard where backup differs
+        main_q = self.db.query(models.InStockDashboard).filter(
+            _backup_exists_filter(models.InStockDashboard),
+            models.InStockDashboard.backup_retail_price.isnot(None),
+        )
+
+        # Query TheDressOutlet where backup differs
+        tdo_q = self.db.query(models.TheDressOutlet).filter(
+            _backup_exists_filter(models.TheDressOutlet),
+            models.TheDressOutlet.backup_retail_price.isnot(None),
+        )
+
+        # Apply search
+        if search:
+            st = f"%{search}%"
+            search_filter = or_(
+                models.InStockDashboard.style.ilike(st),
+                models.InStockDashboard.vendor.ilike(st),
+            )
+            main_q = main_q.filter(search_filter)
+
+            search_filter_tdo = or_(
+                models.TheDressOutlet.style.ilike(st),
+                models.TheDressOutlet.vendor.ilike(st),
+            )
+            tdo_q = tdo_q.filter(search_filter_tdo)
+
+        main_count = main_q.count()
+        tdo_count = tdo_q.count()
+        total_count = main_count + tdo_count
+
+        main_rows = main_q.order_by(order).offset(offset).limit(limit).all()
+        tdo_rows = tdo_q.order_by(order_tdo).offset(offset).limit(limit).all()
+
+        def _format_item(row, source_table):
+            changes = _diff_fields(row)
+            if not changes:
+                return None
+            ts = row.backup_created_at
+            return {
+                "style": row.style,
+                "vendor": row.vendor,
+                "source_table": source_table,
+                "changes": changes,
+                "total_inventory": row.total_inventory,
+                "changes_made_at": ts.isoformat() if ts else None,
+            }
+
+        items = []
+        for row in main_rows:
+            item = _format_item(row, "in_stock_dashboard")
+            if item:
+                items.append(item)
+
+        for row in tdo_rows:
+            item = _format_item(row, "the_dress_outlet")
+            if item:
+                items.append(item)
+
+        # Combined sort
+        if sort_by == "newest":
+            items.sort(key=lambda x: x.get("changes_made_at") or "", reverse=True)
+        else:
+            items.sort(key=lambda x: x.get("changes_made_at") or "")
+
+        return {
+            "items": items,
+            "total_count": total_count,
+            "page": page,
+            "total_pages": max(1, (total_count + limit - 1) // limit),
         }
 
     # _parse_tags_categorized removed — use parse_tags_categorized() from app.utils.tag_utils instead.

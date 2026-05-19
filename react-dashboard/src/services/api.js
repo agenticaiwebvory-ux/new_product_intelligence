@@ -153,8 +153,25 @@ export const apiService = {
     const response = await api.post(`/products/${productId}/sync/${storeKey}`);
     return response.data;
   },
-  async revertUpdate(sku, type = 'all') {
+  async getProductChanges(page = 1, limit = 50, search = "", sortBy = "newest") {
+    const response = await api.get('/products/changes', {
+      params: { page, limit, search: search || undefined, sort_by: sortBy }
+    });
+    return response.data;
+  },
+
+  async revertUpdate(sku, type = 'all') {
     const response = await api.post(`/products/revert/${sku}?type=${type}`);
+    return response.data;
+  },
+
+  async clearBackup(sku) {
+    const response = await api.delete(`/products/changes/${sku}`);
+    return response.data;
+  },
+
+  async clearAllBackups() {
+    const response = await api.delete('/products/changes');
     return response.data;
   },
 

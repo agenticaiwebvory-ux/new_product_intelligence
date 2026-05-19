@@ -1,6 +1,7 @@
 import logging
 import time
 import re
+from datetime import datetime
 
 from sqlalchemy.orm import Session
 from ..models.catalog import Product, InStockDashboard
@@ -62,6 +63,7 @@ class ProductTool:
                     target_row.backup_meta_description = tdo_live.seo_description or ""
                     target_row.backup_total_inventory = target_row.total_inventory
                     target_row.backup_sizes = target_row.sizes if target_row.sizes is not None else ""
+                    target_row.backup_created_at = datetime.utcnow()
             else:
                 # If not linked, lock it with empty values to avoid constant attempts
                 target_row.backup_title = target_row.local_title or ""
@@ -132,6 +134,7 @@ class ProductTool:
                         if target_row.backup_sizes is None:
                             target_row.backup_total_inventory = target_row.total_inventory
                             target_row.backup_sizes = target_row.sizes
+                    target_row.backup_created_at = datetime.utcnow()
                 
                 # WDO Backup for wholesale price
                 wdo_pid = target_row.wdo_product_id
@@ -370,17 +373,54 @@ class ProductTool:
             target_row.backup_wholesale_price = None
             target_row.backup_total_inventory = None
             target_row.backup_sizes = None
+            target_row.backup_created_at = None
         elif revert_type == "price":
             target_row.backup_retail_price = None
             target_row.backup_wholesale_price = None
+            target_row.backup_created_at = None
         elif revert_type == "inventory":
             target_row.backup_total_inventory = None
             target_row.backup_sizes = None
+            target_row.backup_created_at = None
         elif revert_type == "content":
             target_row.backup_title = None
             target_row.backup_description = None
+            target_row.backup_created_at = None
 
         self.db.commit()
 
         logger.info(f"revert_to_backup finished in {time.time() - start_time:.2f}s")
         return {"status": "success", "message": "Revert successful (Batch)"}
+
+    async def clear_backup(self, sku: str):
+        """Nullify all backup fields for a product without reverting."""
+        target = self.db.query(InStockDashboard).filter(InStockDashboard.style == sku).first()
+        if not target:
+            from ..models.catalog import TheDressOutlet
+            target = self.db.query(TheDressOutlet).filter(TheDressOutlet.style == sku).first()
+        if not target:
+            raise ProductNotFoundError(sku)
+        for col in ('backup_title', 'backup_description', 'backup_meta_title',
+                    'backup_meta_description', 'backup_retail_price',
+                    'backup_wholesale_price', 'backup_total_inventory',
+                    'backup_sizes', 'backup_created_at'):
+            setattr(target, col, None)
+        self.db.commit()
+        return {"status": "success", "message": f"Backup cleared for {sku}"}
+
+    async def clear_all_backups(self):
+        """Nullify all backup fields across both tables."""
+        from ..models.catalog import TheDressOutlet
+        backup_cols = ['backup_title', 'backup_description', 'backup_meta_title',
+                       'backup_meta_description', 'backup_retail_price',
+                       'backup_wholesale_price', 'backup_total_inventory',
+                       'backup_sizes', 'backup_created_at']
+        updates = {c: None for c in backup_cols}
+        main_count = self.db.query(InStockDashboard).filter(
+            InStockDashboard.backup_retail_price.isnot(None)
+        ).update(updates, synchronize_session=False)
+        tdo_count = self.db.query(TheDressOutlet).filter(
+            TheDressOutlet.backup_retail_price.isnot(None)
+        ).update(updates, synchronize_session=False)
+        self.db.commit()
+        return {"status": "success", "message": f"Cleared backups for {main_count + tdo_count} products"}

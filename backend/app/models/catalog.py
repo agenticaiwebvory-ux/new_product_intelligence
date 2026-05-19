@@ -132,6 +132,7 @@ class InStockDashboard(Base):
     backup_wholesale_price = Column(Float)
     backup_total_inventory = Column(Integer)
     backup_sizes = Column(String) # Snapshot of size breakdown like "2(1), 14(1)"
+    backup_created_at = Column(DateTime) # When the backup snapshot was created
     
     # issues = Column(Text)
     has_video = Column(Integer)
@@ -185,6 +186,7 @@ class TheDressOutlet(Base):
     total_inventory = Column(Integer)
     backup_total_inventory = Column(Integer)
     backup_sizes = Column(String)
+    backup_created_at = Column(DateTime)
     # issues = Column(Text)
     has_video = Column(Integer)
     match_method = Column(String)

@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import {
   ChevronRight, Package,
   RefreshCw, Pencil, Check, ArrowUpRight, ChevronDown,
-  Eye, TrendingUp, RotateCcw, Palette, Maximize,
+  TrendingUp, RotateCcw,
   Tag, X, Flame, Plus
 } from 'lucide-react'
 import AuditDetailsModal from './AuditDetailsModal'
@@ -699,15 +699,17 @@ const MerchandisingReport = ({ globalStats, initialMode }) => {
                 <th className="p-4 w-[50px] border-b border-slate-200" />
                 <th className="p-4 text-left text-[0.75rem] font-extrabold text-slate-500 border-b border-slate-200 uppercase tracking-wider w-[80px]">ASSET</th>
                 <th className="p-4 text-left text-[0.75rem] font-extrabold text-slate-500 border-b border-slate-200 uppercase tracking-wider min-w-[250px]">STYLE / PRODUCT</th>
-                <th className="p-4 text-center text-[0.75rem] font-extrabold text-slate-500 border-b border-slate-200 uppercase tracking-wider w-[100px]">RETAIL PRICE</th>
-                <th className="p-4 text-center text-[0.75rem] font-extrabold text-slate-500 border-b border-slate-200 uppercase tracking-widest w-[130px]">Total Stock</th>
+                <th className="p-4 text-left text-[0.75rem] font-extrabold text-slate-500 border-b border-slate-200 uppercase tracking-wider w-[120px]">VENDOR</th>
+                <th className="p-4 text-center text-[0.75rem] font-extrabold text-slate-500 border-b border-slate-200 uppercase tracking-wider w-[160px]">VIEWS (30/60/90)</th>
+                <th className="p-4 text-center text-[0.75rem] font-extrabold text-slate-500 border-b border-slate-200 uppercase tracking-wider w-[160px]">SOLD (30/60/90)</th>
+                <th className="p-4 text-center text-[0.75rem] font-extrabold text-slate-500 border-b border-slate-200 uppercase tracking-wider w-[160px]">RETURNS (30/60/90)</th>
               </tr>
             )}
           </thead>
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={isMerchMode ? 9 : 5} className="p-32 text-center">
+                <td colSpan={isMerchMode ? 9 : 7} className="p-32 text-center">
                   <div className="flex flex-col items-center gap-4">
                     <RefreshCw className="animate-spin text-brand" size={40} />
                     <div className="text-slate-400 font-extrabold text-sm uppercase tracking-widest">Updating Catalog View...</div>
@@ -809,69 +811,30 @@ const MerchandisingReport = ({ globalStats, initialMode }) => {
                     </>
                   ) : (
                     <>
-                      <td className="p-5 text-center relative group">
-                        <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-all duration-300">
-                          {/* Push Icon - Visible only when price is actually different from live */}
-                          {p.sync_status?.price && (
-                            <button
-                              onClick={(e) => { e.stopPropagation(); pushPriceToShopify(p); }}
-                              className="p-1 bg-emerald-50 text-emerald-600 rounded-md hover:bg-emerald-600 hover:text-white transition-all shadow-sm border border-emerald-100 cursor-pointer"
-                              title="Push Price to Shopify"
-                            >
-                              <RefreshCw size={10} />
-                            </button>
-                          )}
-
-                          {/* Revert Icon - Enabled ONLY after a push has occurred */}
-                          <button
-                            disabled={!p.has_pushed_price}
-                            onClick={(e) => { e.stopPropagation(); handleRevertPrice(p); }}
-                            className={`p-1 rounded-md transition-all shadow-sm border ${p.has_pushed_price ? 'bg-rose-50 text-rose-600 border-rose-100 hover:bg-rose-600 hover:text-white cursor-pointer' : 'bg-slate-50 text-slate-300 border-slate-100 cursor-not-allowed opacity-50'}`}
-                            title={p.has_pushed_price ? "Undo last Shopify push" : "No push to revert"}
-                          >
-                            <RotateCcw size={10} />
-                          </button>
+                      <td className="p-5 text-center">
+                        <div className="text-[0.8rem] font-bold text-slate-600 uppercase tracking-tight">
+                          {p.vendor || 'Unknown'}
                         </div>
-
-                        {/* edit price */}
-                        {editingPrice?.id === p.internal_id && editingPrice?.field === 'retail' ? (
-                          <div className="flex items-center gap-1 justify-center">
-                            <input
-                              autoFocus
-                              type="number"
-                              value={editingPrice.value}
-                              onChange={(e) => setEditingPrice({ ...editingPrice, value: e.target.value })}
-                              onKeyDown={(e) => { if (e.key === 'Enter') savePrice(); if (e.key === 'Escape') setEditingPrice(null); }}
-                              onBlur={savePrice}
-                              className="w-[110px] text-[0.85rem] font-black border-2 border-indigo-500 rounded-lg px-2 py-1 outline-none shadow-sm"
-                            />
-                            <Check size={16} className="text-emerald-500 cursor-pointer hover:scale-110 transition-transform" onClick={savePrice} />
-                          </div>
-                        ) : (
-                          <div
-                            onClick={() => setEditingPrice({ id: p.internal_id, sku: p.sku, field: 'retail', value: p.retail_price, product_id: p.product_id })}
-                            className={`text-[0.9rem] font-black cursor-pointer hover:bg-slate-50 py-1 rounded transition-all ${p.sync_status?.price ? 'text-amber-600' : 'text-slate-700 hover:text-indigo-600'}`}
-                          >
-                            ${p.retail_price}
-                          </div>
-                        )}
-                        {p.sync_status?.tags && (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); pushToShopifyMerch(p); }}
-                            disabled={pushingStyle === p.sku}
-                            className="mt-2 flex items-center gap-1.5 px-3 py-1 rounded-full text-[0.6rem] font-black uppercase tracking-wider bg-brand text-white shadow-md hover:bg-brand/90 transition-all mx-auto"
-                          >
-                            {pushingStyle === p.sku ? <RefreshCw size={10} className="animate-spin" /> : <ArrowUpRight size={10} />}
-                            Push
-                          </button>
-                        )}
                       </td>
                       <td className="p-5 text-center">
-                        <div className="flex flex-col items-center justify-center">
-                          <div className={`px-3 py-1.5 rounded-xl text-[0.9rem] font-black tracking-tight flex items-center gap-2 border shadow-sm transition-all ${p.total_inventory <= 0 ? 'bg-rose-50 text-rose-600 border-rose-100 shadow-rose-100/50' : p.total_inventory < 5 ? 'bg-amber-50 text-amber-600 border-amber-100 shadow-amber-100/50' : 'bg-emerald-50 text-emerald-600 border-emerald-100 shadow-emerald-100/50'}`}>
-                            <Package size={14} className="opacity-70" />
-                            {p.total_inventory}
-                          </div>
+                        <div className="flex justify-center gap-10">
+                          <span className="text-[0.8rem] text-slate-500 font-bold opacity-60">{(p.pageviews_details?.days_30 || 0).toLocaleString()}</span>
+                          <span className="text-[0.8rem] text-slate-500 font-bold opacity-60">{(p.pageviews_details?.days_60 || 0).toLocaleString()}</span>
+                          <span className="text-[0.8rem] text-indigo-600 font-black scale-105">{(p.pageviews_details?.days_90 || 0).toLocaleString()}</span>
+                        </div>
+                      </td>
+                      <td className="p-5 text-center">
+                        <div className="flex justify-center gap-10">
+                          <span className="text-[0.8rem] text-slate-500 font-bold opacity-60">{(p.sell_thru_details?.days_30 || 0).toLocaleString()}</span>
+                          <span className="text-[0.8rem] text-slate-500 font-bold opacity-60">{(p.sell_thru_details?.days_60 || 0).toLocaleString()}</span>
+                          <span className="text-[0.8rem] text-emerald-600 font-black scale-105">{(p.sell_thru_details?.days_90 || 0).toLocaleString()}</span>
+                        </div>
+                      </td>
+                      <td className="p-5 text-center">
+                        <div className="flex justify-center gap-10">
+                          <span className="text-[0.8rem] text-slate-500 font-bold opacity-60">{(p.returns_details?.days_30 || 0).toLocaleString()}</span>
+                          <span className="text-[0.8rem] text-slate-500 font-bold opacity-60">{(p.returns_details?.days_60 || 0).toLocaleString()}</span>
+                          <span className="text-[0.8rem] text-rose-600 font-black scale-105">{(p.returns_details?.days_90 || 0).toLocaleString()}</span>
                         </div>
                       </td>
                     </>
@@ -1328,15 +1291,24 @@ const MerchandisingReport = ({ globalStats, initialMode }) => {
                               <div className="mb-4">
                                 <div className="text-[0.65rem] font-extrabold text-slate-600 tracking-wider mb-2 uppercase">AVAILABLE COLORS ({activeStoreKey})</div>
                                 <div className="flex gap-2 flex-wrap">
-                                  {Object.keys(activeColorVars).map(c => (
-                                    <button
-                                      key={c}
-                                      onClick={() => setSelectedColors({ ...selectedColors, [p.internal_id]: c })}
-                                      className={`px-3 py-1.5 rounded-lg text-[0.75rem] font-bold border transition-all ${activeColor === c ? 'bg-brand text-white border-brand' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'}`}
-                                    >
-                                      {c} <span className="opacity-75">{activeColorTotals?.[c] || 0}</span>
-                                    </button>
-                                  ))}
+                                  {Object.keys(activeColorVars).map(c => {
+                                    const bestColor = p.most_sold_color ? p.most_sold_color.split('(')[0].trim() : '';
+                                    const isBest = bestColor && c.toLowerCase() === bestColor.toLowerCase();
+                                    return (
+                                      <button
+                                        key={c}
+                                        onClick={() => setSelectedColors({ ...selectedColors, [p.internal_id]: c })}
+                                        className={`px-3 py-1.5 rounded-lg text-[0.75rem] font-bold border transition-all relative ${activeColor === c ? 'bg-brand text-white border-brand' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'}`}
+                                      >
+                                        {c} <span className="opacity-75">{activeColorTotals?.[c] || 0}</span>
+                                        {isBest && (
+                                          <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded-full text-[0.45rem] font-black uppercase tracking-wider bg-amber-300 text-amber-900 border border-amber-400 shadow-sm align-middle">
+                                            BEST
+                                          </span>
+                                        )}
+                                      </button>
+                                    )
+                                  })}
                                 </div>
                               </div>
                             )}
@@ -1372,9 +1344,19 @@ const MerchandisingReport = ({ globalStats, initialMode }) => {
                                     No size-level inventory synced for {activeStoreKey}.
                                   </div>
                                 )}
-                                {activeVariants.map(v => (
+                                {activeVariants.map(v => {
+                                  const bestSizeName = p.most_sold_size ? p.most_sold_size.split('(')[0].trim() : '';
+                                  const isBestSize = bestSizeName && v.size.toString() === bestSizeName;
+                                  return (
                                   <div key={v.size} className="w-[90px] shrink-0 border-r border-slate-200 flex flex-col relative">
-                                    <div className="bg-slate-50 py-2.5 text-[0.75rem] font-black text-center border-b border-slate-200 text-slate-500 uppercase">{v.size}</div>
+                                    <div className="bg-slate-50 py-2.5 text-[0.75rem] font-black text-center border-b border-slate-200 text-slate-500 uppercase">
+                                      {v.size}
+                                      {isBestSize && (
+                                        <span className="ml-1 inline-flex items-center px-1 py-0.5 rounded-full text-[0.4rem] font-black uppercase tracking-wider bg-amber-300 text-amber-900 border border-amber-400 shadow-sm align-middle">
+                                          BEST
+                                        </span>
+                                      )}
+                                    </div>
                                     <div className="p-3.5 text-center flex flex-col items-center justify-center border-b border-slate-100 h-[65px]">
                                       <span className="text-base font-extrabold text-slate-900">{v.inventory}</span>
                                     </div>
@@ -1402,68 +1384,10 @@ const MerchandisingReport = ({ globalStats, initialMode }) => {
                                       })()}
                                     </div>
                                   </div>
-                                ))}
+                                  );
+                                })}
                               </div>
                             </div>
-
-                            {/* TDO Analytics */}
-                            {p.vendor === 'The Dress Outlet' && !isMerchMode && (
-                              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8 mt-6 border-t border-slate-100 pt-8">
-                                <div className="bg-indigo-50 p-5 rounded-[18px] border border-indigo-200 flex items-center gap-4">
-                                  <div className="bg-indigo-500 text-white p-2.5 rounded-xl"><Eye size={22} /></div>
-                                  <div>
-                                    <div className="text-[0.65rem] font-extrabold text-indigo-700 uppercase tracking-wider">{(p.localTimeframe || activeTimeframe)}D Pageviews</div>
-                                    <div className="text-[1.25rem] font-black text-indigo-900">
-                                      {(() => {
-                                        const views = p.pageviews_details || p.pageviews;
-                                        if (views && typeof views === 'object') {
-                                          const tf = p.localTimeframe || activeTimeframe;
-                                          const val = tf === '7' ? views.days_7 : tf === '30' ? views.days_30 : tf === '60' ? views.days_60 : views.days_90;
-                                          return (val || 0).toLocaleString();
-                                        }
-                                        return (p.pageviews || 0).toLocaleString();
-                                      })()}
-                                    </div>
-                                  </div>
-                                </div>
-                                <div className="bg-violet-50 p-5 rounded-[18px] border border-violet-200 flex items-center gap-4">
-                                  <div className="bg-violet-500 text-white p-2.5 rounded-xl"><TrendingUp size={22} /></div>
-                                  <div>
-                                    <div className="text-[0.65rem] font-extrabold text-violet-700 uppercase tracking-wider">Sell Thru / Sold</div>
-                                    <div className="text-[1.25rem] font-black text-violet-900">
-                                      {(() => {
-                                        const st = p.sell_thru_details || p.sell_thru;
-                                        const totalSold = typeof p.sell_thru === 'string' ? parseFloat(p.sell_thru) : p.sell_thru;
-                                        if (st && typeof st === 'object') {
-                                          const tf = p.localTimeframe || activeTimeframe;
-                                          const val = tf === '7' ? st.days_7 : tf === '30' ? st.days_30 : tf === '60' ? st.days_60 : st.days_90;
-                                          return (val || 0).toLocaleString();
-                                        }
-                                        return (totalSold || 0).toLocaleString();
-                                      })()}
-                                    </div>
-                                  </div>
-                                </div>
-                                {p.most_sold_color && p.most_sold_color !== 'N/A' && (
-                                  <div className="bg-amber-50 p-5 rounded-[18px] border border-amber-200 flex items-center gap-4 min-w-[160px]">
-                                    <div className="bg-amber-500 text-white p-2.5 rounded-xl"><Palette size={22} /></div>
-                                    <div className="min-w-0">
-                                      <div className="text-[0.65rem] font-extrabold text-amber-700 uppercase tracking-wider">Best Color</div>
-                                      <div className="text-[1.05rem] font-black text-amber-900 whitespace-nowrap overflow-visible">{p.most_sold_color}</div>
-                                    </div>
-                                  </div>
-                                )}
-                                {p.most_sold_size && p.most_sold_size !== 'N/A' && (
-                                  <div className="bg-emerald-50 p-5 rounded-[18px] border border-emerald-200 flex items-center gap-4 min-w-[160px]">
-                                    <div className="bg-emerald-500 text-white p-2.5 rounded-xl"><Maximize size={22} /></div>
-                                    <div className="min-w-0">
-                                      <div className="text-[0.65rem] font-extrabold text-emerald-700 uppercase tracking-wider">Best Size</div>
-                                      <div className="text-[1.15rem] font-black text-emerald-900 whitespace-nowrap overflow-visible">{p.most_sold_size}</div>
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            )}
 
                             {/* Revert actions */}
                             <div className="flex gap-4 flex-wrap">

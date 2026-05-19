@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Settings, ExternalLink, LogOut, Globe, Menu, ChevronLeft, Search, ShoppingBag, Home, Package, Store, Tag, GitCommitHorizontal } from 'lucide-react'
+import { Settings, ExternalLink, LogOut, Globe, Menu, ChevronLeft, Search, ShoppingBag, Home, Package, Store, Tag, GitCommitHorizontal, LayoutDashboard } from 'lucide-react'
 import { useAppDispatch, useAppSelector } from '../app/hooks'
 import { fetchStoreConnections } from '../features/stores/storesSlice'
 
@@ -55,18 +55,57 @@ const Sidebar = ({ activeView, setActiveView, user, onLogout, sidebarLinks = [],
         <style>{`div::-webkit-scrollbar{width:4px}div::-webkit-scrollbar-track{background:transparent}div::-webkit-scrollbar-thumb{background:#E2E8F0;border-radius:10px}`}</style>
 
 
-        {/* Dashboard */}
+        {/* Workspace (existing) */}
         <button
           onClick={() => setActiveView('merchandise')}
-          title="Merchandising"
+          title="Workspace"
           className={`${navBtnBase} ${activeView === 'merchandise' ? navBtnActive : navBtnInactive} ${isCollapsed ? 'justify-center' : 'justify-start'}`}
         >
           <ShoppingBag size={22} className="shrink-0" />
+          {!isCollapsed && <span>Workspace</span>}
+        </button>
+
+        {/* Dashboard Home */}
+        <button
+          onClick={() => setActiveView('home')}
+          title="Dashboard Home"
+          className={`${navBtnBase} ${activeView === 'home' ? navBtnActive : navBtnInactive} ${isCollapsed ? 'justify-center' : 'justify-start'}`}
+        >
+          <LayoutDashboard size={22} className="shrink-0" />
           {!isCollapsed && <span>Dashboard</span>}
         </button>
 
+        {/* Products */}
+        <button
+          onClick={() => setActiveView('products')}
+          title="Products"
+          className={`${navBtnBase} ${activeView === 'products' ? navBtnActive : navBtnInactive} ${isCollapsed ? 'justify-center' : 'justify-start'}`}
+        >
+          <Package size={22} className="shrink-0" />
+          {!isCollapsed && <span>Products</span>}
+        </button>
 
-        {/* Product Changes / Updates — requirement doc: "Product Changes / Updates" */}
+        {/* Stores */}
+        <button
+          onClick={() => setActiveView('stores')}
+          title="Stores"
+          className={`${navBtnBase} ${activeView === 'stores' ? navBtnActive : navBtnInactive} ${isCollapsed ? 'justify-center' : 'justify-start'}`}
+        >
+          <Store size={22} className="shrink-0" />
+          {!isCollapsed && <span>Stores</span>}
+        </button>
+
+        {/* Tags */}
+        <button
+          onClick={() => setActiveView('tags')}
+          title="Tags"
+          className={`${navBtnBase} ${activeView === 'tags' ? navBtnActive : navBtnInactive} ${isCollapsed ? 'justify-center' : 'justify-start'}`}
+        >
+          <Tag size={22} className="shrink-0" />
+          {!isCollapsed && <span>Tags</span>}
+        </button>
+
+        {/* Product Changes / Updates */}
         {canSeeDashboard && (
           <button
             onClick={() => setActiveView('changes')}
