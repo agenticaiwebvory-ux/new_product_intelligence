@@ -5,6 +5,7 @@ import re
 from sqlalchemy.orm import Session
 from ..models.catalog import Product, InStockDashboard
 from ..integrations.shopify.client import ShopifyClient
+from ..core.redis_client import get_cache, set_cache
 from ..config import settings, STORE_CONFIGS, TDO_VENDOR_NAME
 from ..core.exceptions import ProductNotFoundError, AppBaseException, DatabaseError
 
@@ -15,6 +16,7 @@ class ProductTool:
         self.db = db
 
     async def update_content(self, dashboard_id: int = None, title: str = None, description: str = None, meta_title: str = None, meta_description: str = None, retail_price: float = None, wholesale_price: float = None, notes: str = None, vendor: str = None, color: str = None, stores: list = ["TDO", "WDO", "KOS", "IM"], local_only: bool = False, create_backup: bool = True, skip_content: bool = False, sku: str = None, is_tdo_table: bool = False):
+        import time
         start_time = time.time()
         logger.info(f"update_content started for sku: {sku or dashboard_id}")
         # 0. FIND THE ROW (Smart Routing)
@@ -46,6 +48,18 @@ class ProductTool:
         
         # Primary row to update for sync logic
         target_row = dashboard_row or source_row
+
+        # Record requested stores and pre-filter to only stores with a linked product id
+        requested_stores = list(stores) if stores else []
+        available_stores = []
+        if target_row:
+            for s in requested_stores:
+                try:
+                    pid = getattr(target_row, f"{s.lower()}_product_id", None)
+                except Exception:
+                    pid = None
+                if pid:
+                    available_stores.append(s)
         
         # 0. INITIAL SNAPSHOT (If no backup exists yet)
         if target_row.backup_title is None:
@@ -79,7 +93,11 @@ class ProductTool:
 
         results = {}
         success_count = 0
-        total_requested = len(stores)
+        total_requested = len(requested_stores)
+
+        # For any requested stores without a linked product id, mark as Not Linked
+        for s in (set(requested_stores) - set(available_stores)):
+            results[s] = "Not Linked"
 
         # 1. Update LOCAL MASTER (Staging/Draft)
         # We update BOTH rows to ensure consistency between the unified view and the direct source table.
@@ -114,7 +132,7 @@ class ProductTool:
             return {
                 "status": "success",
                 "message": "Saved to local drafts. Sync required to Shopify.",
-                "details": {s: "Draft Saved" for s in stores}
+                "details": {s: "Draft Saved" for s in requested_stores}
             }
 
         # 2. SNAPSHOT CURRENT LIVE STATE (For Undo/Revert)
@@ -154,11 +172,14 @@ class ProductTool:
                             target_row.backup_meta_description = tdo_live.seo_description or ""
                 
                 self.db.commit()
+                logger.info(f"Backup snapshot taken in {time.time()-start_time:.3f}s")
             except Exception as e:
                 logger.error(f"Backup snapshot failed: {e}")
                 self.db.rollback()
                 raise DatabaseError(f"Could not create backup: {e}")
         # 3. Update LIVE (Shopify + Live Cache)
+        # Only iterate stores that actually have linked product ids
+        stores = available_stores
         for store_key in stores:
             try:
                 store_config = STORE_CONFIGS.get(store_key.lower())
@@ -219,11 +240,19 @@ class ProductTool:
                 # Dynamic Price Sync
                 if sync_success and target_price is not None:
                     # (Price sync logic...)
-                    v_data = await client.graphql_query(
-                        "query($id: ID!) { product(id: $id) { variants(first: 100) { edges { node { id } } } } }", 
-                        {"id": shopify_pid}
-                    )
-                    variants = v_data.get("product", {}).get("variants", {}).get("edges", [])
+                    # Try Redis cache for variant metadata to avoid extra fetch
+                    variant_cache_key = f"shop:variants:{client.store_name}:{pid}"
+                    variants = await get_cache(variant_cache_key)
+                    if not variants:
+                        v_data = await client.graphql_query(
+                            "query($id: ID!) { product(id: $id) { variants(first: 100) { edges { node { id } } } } }", 
+                            {"id": shopify_pid}
+                        )
+                        variants = v_data.get("product", {}).get("variants", {}).get("edges", [])
+                        try:
+                            await set_cache(variant_cache_key, variants, ttl=60)
+                        except Exception:
+                            pass
                     if variants:
                         price_updates = [{"id": v["node"]["id"], "price": str(target_price)} for v in variants]
                         p_res = await client.graphql_query(
@@ -269,6 +298,7 @@ class ProductTool:
                     self.db.commit()
                     results[store_key] = "Success"
                     success_count += 1
+                    logger.info(f"Completed sync for {store_key} in {time.time()-start_time:.3f}s")
 
             except Exception as e:
                 results[store_key] = f"Error: {str(e)}"

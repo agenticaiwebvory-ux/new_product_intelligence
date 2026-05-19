@@ -3,6 +3,7 @@ import logging
 import sqlite3
 from ...config import settings, STORE_CONFIGS
 from ...core.exceptions import ShopifyError
+from ...core.redis_client import get_cache, set_cache
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,16 @@ class ShopifyClient:
         """
         Senior's Logic: Validates token and attempts refresh if it fails (401/403).
         """
+        # Check a short-lived cache to avoid hitting shop API on every request
+        try:
+            cached = await get_cache(f"shop:conn:{self.store_name}")
+            if cached and isinstance(cached, dict):
+                # cached: {"is_valid": bool, "code": int, "msg": str}
+                if cached.get("is_valid"):
+                    return True, cached.get("code"), cached.get("msg")
+        except Exception:
+            cached = None
+
         is_valid, code, msg = await self._check_shop_api()
         
         if not is_valid and code in (401, 403):
@@ -45,7 +56,13 @@ class ShopifyClient:
         # Senior's Update: Persist the error reason to the database
         if log_to_db:
             self._log_status_to_db(is_valid, code, msg)
-        
+
+        # Cache a short-lived success result to avoid repeated validation calls
+        try:
+            await set_cache(f"shop:conn:{self.store_name}", {"is_valid": is_valid, "code": code, "msg": msg}, ttl=30)
+        except Exception:
+            pass
+
         return is_valid, code, msg
 
     def _log_status_to_db(self, is_valid, code, msg):

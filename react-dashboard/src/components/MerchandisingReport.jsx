@@ -496,6 +496,13 @@ const MerchandisingReport = ({ globalStats, initialMode }) => {
     return;
   }
 
+  const getTargetStores = (product) => {
+    if (!product) return ['TDO']
+    const linkedStores = product.stores?.split(',').map(s => s.trim()).filter(Boolean) || []
+    const selectedStore = activeStoreTabs[product.internal_id]
+    return selectedStore && linkedStores.includes(selectedStore) ? [selectedStore] : ['TDO']
+  }
+
   const handleSaveLocally = async () => {
     try {
       if (!selectedProduct) return
@@ -510,7 +517,12 @@ const MerchandisingReport = ({ globalStats, initialMode }) => {
         return
       }
       if (!window.confirm('Save these updates as a local draft?')) return
-      const result = await apiService.pushProductUpdate(selectedProduct.sku, payload, true)
+      const result = await apiService.pushProductUpdate(
+        selectedProduct.sku,
+        payload,
+        true,
+        getTargetStores(selectedProduct)
+      )
       if (result.status === 'failed') { toast.error('Backend Error: ' + result.message); return }
       const updatedProduct = {
         ...selectedProduct,
@@ -551,8 +563,8 @@ const MerchandisingReport = ({ globalStats, initialMode }) => {
       onConfirm: async () => {
         setIsSyncingPrice(true); // Reuse syncing state for general push
         try {
-          const linkedStores = selectedProduct.stores?.split(',').map(s => s.trim()) || ['TDO']
-          const result = await apiService.pushProductUpdate(selectedProduct.sku, { ...payload, stores: linkedStores }, false)
+          const targetStores = getTargetStores(selectedProduct)
+          const result = await apiService.pushProductUpdate(selectedProduct.sku, { ...payload, stores: targetStores }, false)
           if (result.status === 'failed') {
             toast.error('Shopify Push Failed: ' + (result.message || result.summary || 'Store connection or backup error'))
             return
@@ -656,11 +668,16 @@ const MerchandisingReport = ({ globalStats, initialMode }) => {
         setIsSyncingPrice(true);
         setPushingStyle(product.sku);
         try {
-          const res = await apiService.pushProductUpdate(product.sku, {
+          const res = await apiService.pushProductUpdate(
+            product.sku,
+            {
             force_shopify: true,
             retail_price: product.retail_price,
             wholesale_price: product.wholesale_price
-          });
+            },
+            false,
+            getTargetStores(product)
+          );
           if (res.status === 'success') {
             toast.success('Price pushed to Shopify!');
             setProducts(prev => prev.map(p => p.sku === product.sku ? { ...p, sync_status: { ...(p.sync_status || {}), price: false, wholesale: false }, has_pushed_price: true } : p));
@@ -701,10 +718,15 @@ const MerchandisingReport = ({ globalStats, initialMode }) => {
           if (type === 'meta_title') payload.meta_title = product.backup_meta_title
           if (type === 'meta_description') payload.meta_description = product.backup_meta_description
 
-          if (type === 'all') {
-            await apiService.revertUpdate(product.sku, 'all')
+          if (['all', 'price', 'inventory'].includes(type)) {
+            await apiService.revertUpdate(product.sku, type, getTargetStores(product))
           } else {
-            await apiService.pushProductUpdate(product.sku, payload, true)
+            await apiService.pushProductUpdate(
+              product.sku,
+              payload,
+              true,
+              getTargetStores(product)
+            )
           }
 
           toast.success(`Successfully reverted ${type === 'all' ? 'product' : type}`)
@@ -730,7 +752,7 @@ const MerchandisingReport = ({ globalStats, initialMode }) => {
       onConfirm: async () => {
         setIsReverting(true);
         try {
-          await apiService.revertUpdate(product.sku, 'price');
+          await apiService.revertUpdate(product.sku, 'price', getTargetStores(product));
           toast.success('Price reverted!');
           fetchData(true);
           setConfirmationModal(null);
@@ -763,7 +785,12 @@ const MerchandisingReport = ({ globalStats, initialMode }) => {
       const payload = {}
       if (field === 'retail') payload.retail_price = newVal
       if (field === 'wholesale') payload.wholesale_price = newVal
-      await apiService.pushProductUpdate(sku, payload, true)
+      await apiService.pushProductUpdate(
+        sku,
+        payload,
+        true,
+        store_key ? [store_key] : ['TDO']
+      )
     } catch (err) {
       console.error('Price update failed:', err)
       fetchData(true)
