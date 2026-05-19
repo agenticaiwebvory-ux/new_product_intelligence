@@ -103,8 +103,10 @@ const WorkspaceToolbar = ({
             className="h-10 appearance-none bg-transparent pr-7 text-[0.78rem] font-extrabold text-slate-700 outline-none cursor-pointer"
           >
             <option value="all">All Time</option>
-            <option value="recent">Recent Products</option>
-            <option value="older">Older Products</option>
+            <option value="7d">Last 7 Days</option>
+            <option value="30d">Last 30 Days</option>
+            <option value="90d">Last 90 Days</option>
+            <option value="1y">Last 1 Year</option>
             <option value="custom">Custom Range</option>
           </select>
           <ChevronDown size={12} className="pointer-events-none -ml-4 text-slate-400" />

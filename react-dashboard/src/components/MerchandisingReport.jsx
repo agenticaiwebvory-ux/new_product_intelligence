@@ -105,38 +105,36 @@ const MerchandisingReport = ({ globalStats }) => {
   const filterKeyRef = useRef('')
 
   const getDateRange = useCallback(() => {
-    if (datePreset === 'all') return { createdAtFrom: null, createdAtTo: null }
+    if (datePreset === 'all') return { dateFrom: null, dateTo: null }
     if (datePreset === 'custom') {
       return {
-        createdAtFrom: customDateFrom || null,
-        createdAtTo: customDateTo || null
+        dateFrom: customDateFrom || null,
+        dateTo: customDateTo || null
       }
     }
-    const today = new Date().toISOString().split('T')[0]
-    if (datePreset === 'recent') {
-      const past = new Date()
-      past.setDate(past.getDate() - 30)
-      return { createdAtFrom: past.toISOString().split('T')[0], createdAtTo: today }
+    const now = new Date()
+    if (datePreset === '7d') now.setDate(now.getDate() - 7)
+    else if (datePreset === '30d') now.setDate(now.getDate() - 30)
+    else if (datePreset === '90d') now.setDate(now.getDate() - 90)
+    else if (datePreset === '1y') now.setFullYear(now.getFullYear() - 1)
+
+    return {
+      dateFrom: now.toISOString().split('T')[0],
+      dateTo: new Date().toISOString().split('T')[0]
     }
-    if (datePreset === 'older') {
-      const past = new Date()
-      past.setDate(past.getDate() - 90)
-      return { createdAtFrom: null, createdAtTo: past.toISOString().split('T')[0] }
-    }
-    return { createdAtFrom: null, createdAtTo: null }
   }, [datePreset, customDateFrom, customDateTo])
 
   const fetchData = useCallback(async (silent = false, currentVendor = activeVendor, page = currentPage) => {
-    const { createdAtFrom, createdAtTo } = getDateRange()
+    const { dateFrom, dateTo } = getDateRange()
     const requestId = fetchSequenceRef.current + 1
     fetchSequenceRef.current = requestId
     if (!silent) setLoading(true)
     try {
         const vendorQuery = currentVendor === 'ALL' ? '' : currentVendor
-        const extraParams = { tagSearch, viewsFilter: viewsFilter !== 'all' ? viewsFilter : undefined, sellThruFilter: sellThruFilter !== 'all' ? sellThruFilter : undefined, returnsFilter: returnsFilter !== 'all' ? returnsFilter : undefined, createdAtFrom, createdAtTo, store: activeStoreFilter }
+        const extraParams = { tagSearch, store: activeStoreFilter }
         const [prodRes, statsRes] = await Promise.all([
-          apiService.getProducts(vendorQuery, page, itemsPerPage, auditSearch, extraParams),
-          apiService.getDashboardStats(vendorQuery, auditSearch, extraParams)
+          apiService.getProducts(vendorQuery, page, itemsPerPage, auditSearch, dateFrom, dateTo, extraParams),
+          apiService.getDashboardStats(vendorQuery, auditSearch, dateFrom, dateTo, extraParams)
         ])
 
         const rawProducts = prodRes.products || (Array.isArray(prodRes) ? prodRes : [])
@@ -209,11 +207,11 @@ const MerchandisingReport = ({ globalStats }) => {
     } finally {
       if (!silent && fetchSequenceRef.current === requestId) setLoading(false)
     }
-  }, [activeVendor, currentPage, itemsPerPage, auditSearch, getDateRange, tagSearch, viewsFilter, sellThruFilter, returnsFilter, activeStoreFilter])
+  }, [activeVendor, currentPage, itemsPerPage, auditSearch, getDateRange, tagSearch, activeStoreFilter])
 
   useEffect(() => {
-    const { createdAtFrom, createdAtTo } = getDateRange()
-    const filterKey = [activeVendor, auditSearch, activeStoreFilter, datePreset, createdAtFrom, createdAtTo, tagSearch, viewsFilter, sellThruFilter, returnsFilter].join('|')
+    const { dateFrom, dateTo } = getDateRange()
+    const filterKey = [activeVendor, auditSearch, activeStoreFilter, datePreset, dateFrom, dateTo, tagSearch].join('|')
     const filtersChanged = filterKeyRef.current !== filterKey
     filterKeyRef.current = filterKey
     if (filtersChanged && currentPage !== 1) {
@@ -225,7 +223,7 @@ const MerchandisingReport = ({ globalStats }) => {
       fetchData(false, activeVendor, currentPage)
     }, auditSearch ? 400 : 0)
     return () => clearTimeout(delayDebounceFn)
-  }, [activeVendor, activeStoreFilter, auditSearch, currentPage, fetchData, activeTimeframe, getDateRange, datePreset, tagSearch, viewsFilter, sellThruFilter, returnsFilter])
+  }, [activeVendor, activeStoreFilter, auditSearch, currentPage, fetchData, activeTimeframe, getDateRange, datePreset, tagSearch])
 
   const toggleExpand = (id) => {
     const newExpanded = new Set(expandedRows)
@@ -560,9 +558,43 @@ const MerchandisingReport = ({ globalStats }) => {
 
   // Removed top-level loading check to allow localized loading in the table body
 
-  const filtered = products.filter(p => {
+  let filtered = products.filter(p => {
     if (activeStoreFilter === 'ALL') return true;
     return p.store_health?.[activeStoreFilter] !== 'MISSING';
+  });
+  // Compute means for avg sorting
+  const avgCache = {};
+  const getVal = (p, type) => {
+    if (type === 'views') return p.pageviews_details?.days_90 || 0;
+    if (type === 'sold') return p.sell_thru_details?.days_90 || 0;
+    if (type === 'returns') return p.returns_details?.days_90 || 0;
+    return 0;
+  };
+  ['views', 'sold', 'returns'].forEach(t => {
+    const f = t === 'views' ? viewsFilter : t === 'sold' ? sellThruFilter : returnsFilter;
+    if (f === 'avg') {
+      const vals = filtered.map(p => getVal(p, t));
+      avgCache[t] = vals.reduce((s, v) => s + v, 0) / (vals.length || 1);
+    }
+  });
+  filtered.sort((a, b) => {
+    const dir = (type) => {
+      const f = type === 'views' ? viewsFilter : type === 'sold' ? sellThruFilter : returnsFilter;
+      if (f === 'highest') return -1;
+      if (f === 'lowest') return 1;
+      if (f === 'avg') return -1;
+      return 0;
+    };
+    const score = (p, type) => {
+      const f = type === 'views' ? viewsFilter : type === 'sold' ? sellThruFilter : returnsFilter;
+      if (f === 'avg') return -Math.abs(getVal(p, type) - avgCache[type]);
+      return getVal(p, type);
+    };
+    let order = 0;
+    if (viewsFilter !== 'all') order = order || (score(a, 'views') - score(b, 'views')) * dir('views');
+    if (sellThruFilter !== 'all') order = order || (score(a, 'sold') - score(b, 'sold')) * dir('sold');
+    if (returnsFilter !== 'all') order = order || (score(a, 'returns') - score(b, 'returns')) * dir('returns');
+    return order;
   })
   const visibleTotalCount = activeStoreFilter === 'ALL' ? totalCount : filtered.length
   const totalPages = Math.ceil(visibleTotalCount / itemsPerPage)

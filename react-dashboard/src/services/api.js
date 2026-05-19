@@ -93,36 +93,30 @@ export const authService = {
 
 export const apiService = {
   // 1. Catalog & Stats
-  async getProducts(vendor = "", page = 1, limit = 50, search = "", extraParams = {}) {
+  async getProducts(vendor = "", page = 1, limit = 50, search = "", dateFrom = null, dateTo = null, extraParams = {}) {
     const response = await api.get('/products/', {
       params: {
         vendor: vendor || undefined,
         page,
         limit,
         search: search || undefined,
-        tags: extraParams.tagSearch || undefined,
-        views_sort: extraParams.viewsFilter || undefined,
-        sell_thru_sort: extraParams.sellThruFilter || undefined,
-        returns_sort: extraParams.returnsFilter || undefined,
-        created_at_from: extraParams.createdAtFrom || undefined,
-        created_at_to: extraParams.createdAtTo || undefined
+        date_from: dateFrom || undefined,
+        date_to: dateTo || undefined,
+        tags: extraParams.tagSearch || undefined
       }
     });
     return response.data;
   },
 
-  async getDashboardStats(vendor = "", search = "", extraParams = {}) {
+  async getDashboardStats(vendor = "", search = "", dateFrom = null, dateTo = null, extraParams = {}) {
     const response = await api.get('/dashboard/stats', {
       params: {
         vendor: vendor || undefined,
         store: extraParams.store !== 'ALL' ? extraParams.store : undefined,
         search: search || undefined,
-        tags: extraParams.tagSearch || undefined,
-        views_sort: extraParams.viewsFilter || undefined,
-        sell_thru_sort: extraParams.sellThruFilter || undefined,
-        returns_sort: extraParams.returnsFilter || undefined,
-        created_at_from: extraParams.createdAtFrom || undefined,
-        created_at_to: extraParams.createdAtTo || undefined
+        date_from: dateFrom || undefined,
+        date_to: dateTo || undefined,
+        tags: extraParams.tagSearch || undefined
       }
     });
     return response.data;
