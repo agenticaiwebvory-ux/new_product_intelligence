@@ -81,7 +81,7 @@ class DashboardService:
             _miss(model.im_product_id),
         )
 
-    def get_aggregated_stats(self, vendor: str = None, search: str = None, date_from: str = None, date_to: str = None):
+    def get_aggregated_stats(self, vendor: str = None, store: str = None, search: str = None, date_from: str = None, date_to: str = None):
         """
         Aggregates catalog stats across both product tables.
         """
@@ -98,23 +98,66 @@ class DashboardService:
         except Exception as e:
             self.logger.error(f"Health check failed: {e}")
 
+        # Build store filter
+        store_filter = []
+        if store and store != 'ALL':
+            store_col = getattr(models.InStockDashboard, f"{store.lower()}_product_id", None)
+            if store_col is not None:
+                store_filter.append(store_col.isnot(None))
+
         # 1. Main catalog (InStockDashboard) — excludes TDO_VENDOR_NAME rows to prevent duplicates
         main_base = [
             models.InStockDashboard.vendor != TDO_VENDOR_NAME,
             or_(models.Product.tags == None, ~models.Product.tags.ilike("%discontinued%")),
-        ]
+        ] + store_filter
         mc, mi, mo, mt, mw, mk, mim = self._build_stat_block(
             models.InStockDashboard, main_base, vendor, search, date_from, date_to, is_tdo_table=False
         )
+
+        # Build TDO store filter
+        tdo_store_filter = []
+        if store and store != 'ALL':
+            tdo_store_col = getattr(models.TheDressOutlet, f"{store.lower()}_product_id", None)
+            if tdo_store_col is not None:
+                tdo_store_filter.append(tdo_store_col.isnot(None))
 
         # 2. TDO-specific table (TheDressOutlet) — only TDO_VENDOR_NAME rows
         tdo_base = [
             models.TheDressOutlet.vendor == TDO_VENDOR_NAME,
             or_(models.Product.tags == None, ~models.Product.tags.ilike("%discontinued%")),
-        ]
+        ] + tdo_store_filter
         tc, ti, to_, tt, tw, tk, tim = self._build_stat_block(
             models.TheDressOutlet, tdo_base, vendor, search, date_from, date_to, is_tdo_table=True
         )
+
+        # Total sold (sum of 90d sell_thru from MainKos, outerjoined with Product for date filter)
+        total_sold = 0
+        try:
+            sold_q = self.db.query(func.coalesce(func.sum(models.MainKos.sell_thru), 0)).outerjoin(
+                models.Product,
+                models.MainKos.product_id == models.Product.product_id
+            ).filter(
+                or_(models.MainKos.time_frame == "90", models.MainKos.time_frame == "90d")
+            )
+            if date_from:
+                sold_q = sold_q.filter(models.Product.published_at >= date_from)
+            if date_to:
+                sold_q = sold_q.filter(models.Product.published_at <= date_to + "T23:59:59Z")
+            if search:
+                st = f"%{search}%"
+                sold_q = sold_q.outerjoin(
+                    models.InStockDashboard,
+                    models.InStockDashboard.tdo_product_id == models.MainKos.product_id
+                ).outerjoin(
+                    models.TheDressOutlet,
+                    models.TheDressOutlet.tdo_product_id == models.MainKos.product_id
+                ).filter(or_(
+                    models.InStockDashboard.style.ilike(st),
+                    models.TheDressOutlet.style.ilike(st),
+                ))
+            total_sold = sold_q.scalar() or 0
+        except Exception as e:
+            self.logger.warning(f"Total sold query failed: {e}")
 
         return {
             "total_styles": mc + tc,
@@ -124,23 +167,38 @@ class DashboardService:
             "wdo_missing": mw + tw,
             "kos_missing": mk + tk,
             "im_missing": mim + tim,
+            "total_sold": total_sold,
             "store_health": health,
-            "vendors": self.get_designers_with_counts(),
+            "vendors": self.get_designers_with_counts(store=store),
         }
 
-    def get_designers_with_counts(self):
+    def get_designers_with_counts(self, store=None):
         vendors_dict = {}
+
+        # Filter for InStockDashboard (exclude TDO vendor)
+        main_filter = [models.InStockDashboard.vendor != TDO_VENDOR_NAME]
+        if store and store != 'ALL':
+            store_col = getattr(models.InStockDashboard, f"{store.lower()}_product_id", None)
+            if store_col is not None:
+                main_filter.append(store_col.isnot(None))
 
         counts = self.db.query(
             models.InStockDashboard.vendor,
             func.count(models.InStockDashboard.id)
-        ).filter(models.InStockDashboard.vendor != TDO_VENDOR_NAME).group_by(models.InStockDashboard.vendor).all()
+        ).filter(*main_filter).group_by(models.InStockDashboard.vendor).all()
 
         for name, count in counts:
             if name and name.strip():
                 vendors_dict[name] = count
 
-        tdo_count = self.db.query(models.TheDressOutlet).filter(models.TheDressOutlet.vendor == TDO_VENDOR_NAME).count()
+        # Filter for TheDressOutlet (only TDO vendor)
+        tdo_filter = [models.TheDressOutlet.vendor == TDO_VENDOR_NAME]
+        if store and store != 'ALL':
+            tdo_store_col = getattr(models.TheDressOutlet, f"{store.lower()}_product_id", None)
+            if tdo_store_col is not None:
+                tdo_filter.append(tdo_store_col.isnot(None))
+
+        tdo_count = self.db.query(models.TheDressOutlet).filter(*tdo_filter).count()
         if tdo_count > 0:
             vendors_dict[TDO_VENDOR_NAME] = tdo_count
 

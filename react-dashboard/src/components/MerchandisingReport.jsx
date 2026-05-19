@@ -93,6 +93,10 @@ const MerchandisingReport = ({ globalStats }) => {
   const [datePreset, setDatePreset] = useState('all')
   const [customDateFrom, setCustomDateFrom] = useState('')
   const [customDateTo, setCustomDateTo] = useState('')
+  const [tagSearch, setTagSearch] = useState('')
+  const [viewsFilter, setViewsFilter] = useState('all')
+  const [sellThruFilter, setSellThruFilter] = useState('all')
+  const [returnsFilter, setReturnsFilter] = useState('all')
   const [confirmationModal, setConfirmationModal] = useState(null)
   const [isSyncingPrice, setIsSyncingPrice] = useState(false)
   const [isSyncingTags, setIsSyncingTags] = useState(false)
@@ -101,35 +105,38 @@ const MerchandisingReport = ({ globalStats }) => {
   const filterKeyRef = useRef('')
 
   const getDateRange = useCallback(() => {
-    if (datePreset === 'all') return { dateFrom: null, dateTo: null }
+    if (datePreset === 'all') return { createdAtFrom: null, createdAtTo: null }
     if (datePreset === 'custom') {
       return {
-        dateFrom: customDateFrom || null,
-        dateTo: customDateTo || null
+        createdAtFrom: customDateFrom || null,
+        createdAtTo: customDateTo || null
       }
     }
-    const now = new Date()
-    if (datePreset === '7d') now.setDate(now.getDate() - 7)
-    else if (datePreset === '30d') now.setDate(now.getDate() - 30)
-    else if (datePreset === '90d') now.setDate(now.getDate() - 90)
-    else if (datePreset === '1y') now.setFullYear(now.getFullYear() - 1)
-
-    return {
-      dateFrom: now.toISOString().split('T')[0],
-      dateTo: new Date().toISOString().split('T')[0]
+    const today = new Date().toISOString().split('T')[0]
+    if (datePreset === 'recent') {
+      const past = new Date()
+      past.setDate(past.getDate() - 30)
+      return { createdAtFrom: past.toISOString().split('T')[0], createdAtTo: today }
     }
+    if (datePreset === 'older') {
+      const past = new Date()
+      past.setDate(past.getDate() - 90)
+      return { createdAtFrom: null, createdAtTo: past.toISOString().split('T')[0] }
+    }
+    return { createdAtFrom: null, createdAtTo: null }
   }, [datePreset, customDateFrom, customDateTo])
 
   const fetchData = useCallback(async (silent = false, currentVendor = activeVendor, page = currentPage) => {
-    const { dateFrom, dateTo } = getDateRange()
+    const { createdAtFrom, createdAtTo } = getDateRange()
     const requestId = fetchSequenceRef.current + 1
     fetchSequenceRef.current = requestId
     if (!silent) setLoading(true)
     try {
         const vendorQuery = currentVendor === 'ALL' ? '' : currentVendor
+        const extraParams = { tagSearch, viewsFilter: viewsFilter !== 'all' ? viewsFilter : undefined, sellThruFilter: sellThruFilter !== 'all' ? sellThruFilter : undefined, returnsFilter: returnsFilter !== 'all' ? returnsFilter : undefined, createdAtFrom, createdAtTo, store: activeStoreFilter }
         const [prodRes, statsRes] = await Promise.all([
-          apiService.getProducts(vendorQuery, page, itemsPerPage, auditSearch, dateFrom, dateTo),
-          apiService.getDashboardStats(vendorQuery, auditSearch, dateFrom, dateTo)
+          apiService.getProducts(vendorQuery, page, itemsPerPage, auditSearch, extraParams),
+          apiService.getDashboardStats(vendorQuery, auditSearch, extraParams)
         ])
 
         const rawProducts = prodRes.products || (Array.isArray(prodRes) ? prodRes : [])
@@ -188,6 +195,7 @@ const MerchandisingReport = ({ globalStats }) => {
         setStats({
           total: raw.total_styles || 0,
           total_units: raw.total_inventory || 0,
+          total_sold: raw.total_sold || 0,
           out_of_stock: raw.out_of_stock || 0,
           kos_missing: raw.kos_missing || 0,
           wdo_missing: raw.wdo_missing || 0,
@@ -201,11 +209,11 @@ const MerchandisingReport = ({ globalStats }) => {
     } finally {
       if (!silent && fetchSequenceRef.current === requestId) setLoading(false)
     }
-  }, [activeVendor, currentPage, itemsPerPage, auditSearch, getDateRange])
+  }, [activeVendor, currentPage, itemsPerPage, auditSearch, getDateRange, tagSearch, viewsFilter, sellThruFilter, returnsFilter, activeStoreFilter])
 
   useEffect(() => {
-    const { dateFrom, dateTo } = getDateRange()
-    const filterKey = [activeVendor, auditSearch, activeStoreFilter, datePreset, dateFrom, dateTo].join('|')
+    const { createdAtFrom, createdAtTo } = getDateRange()
+    const filterKey = [activeVendor, auditSearch, activeStoreFilter, datePreset, createdAtFrom, createdAtTo, tagSearch, viewsFilter, sellThruFilter, returnsFilter].join('|')
     const filtersChanged = filterKeyRef.current !== filterKey
     filterKeyRef.current = filterKey
     if (filtersChanged && currentPage !== 1) {
@@ -217,7 +225,7 @@ const MerchandisingReport = ({ globalStats }) => {
       fetchData(false, activeVendor, currentPage)
     }, auditSearch ? 400 : 0)
     return () => clearTimeout(delayDebounceFn)
-  }, [activeVendor, activeStoreFilter, auditSearch, currentPage, fetchData, activeTimeframe, getDateRange, datePreset])
+  }, [activeVendor, activeStoreFilter, auditSearch, currentPage, fetchData, activeTimeframe, getDateRange, datePreset, tagSearch, viewsFilter, sellThruFilter, returnsFilter])
 
   const toggleExpand = (id) => {
     const newExpanded = new Set(expandedRows)
@@ -587,6 +595,14 @@ const MerchandisingReport = ({ globalStats }) => {
         setCustomDateFrom={setCustomDateFrom}
         customDateTo={customDateTo}
         setCustomDateTo={setCustomDateTo}
+        tagSearch={tagSearch}
+        setTagSearch={setTagSearch}
+        viewsFilter={viewsFilter}
+        setViewsFilter={setViewsFilter}
+        sellThruFilter={sellThruFilter}
+        setSellThruFilter={setSellThruFilter}
+        returnsFilter={returnsFilter}
+        setReturnsFilter={setReturnsFilter}
       />
 
       {/* Table */}
