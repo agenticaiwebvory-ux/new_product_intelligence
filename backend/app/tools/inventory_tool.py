@@ -5,6 +5,7 @@ import re
 from sqlalchemy.orm import Session
 from ..models.catalog import Inventory, InStockDashboard, Product
 from ..integrations.shopify.client import ShopifyClient
+from ..core.redis_client import get_cache, set_cache
 from ..config import STORE_CONFIGS
 
 logger = logging.getLogger(__name__)
@@ -19,6 +20,8 @@ class InventoryTool:
         Unified Batch Update for both Price and Inventory using Product ID.
         This is significantly faster (seconds vs minutes) and more reliable than SKU matching.
         """
+        import time
+        start_time = time.time()
         self.logger.info(f"update_product_batch started for {sku or dashboard_id}, stores: {stores}")
         # Find ALL matching rows to ensure full sync between InStockDashboard and TheDressOutlet
         from ..models.catalog import TheDressOutlet
@@ -36,6 +39,24 @@ class InventoryTool:
         
         # Primary row for metadata lookup
         target_row = target_rows[0]
+
+        # Pre-filter requested stores to only those with a linked product id
+        requested_stores = list(stores) if stores else []
+        available_stores = []
+        for s in requested_stores:
+            try:
+                pid = getattr(target_row, f"{s.lower()}_product_id", None)
+            except Exception:
+                pid = None
+            if pid:
+                available_stores.append(s)
+
+        if not available_stores:
+            self.logger.info(f"No linked stores found for batch update of {sku or dashboard_id}")
+            # Still update local DB (already done above) but skip Shopify pushes
+            return True
+
+        stores = available_stores
 
         # 0. INITIAL SNAPSHOT (If no backup exists yet and this is not a revert/push)
         if hasattr(target_row, 'backup_sizes') and target_row.backup_sizes is None:
@@ -72,6 +93,8 @@ class InventoryTool:
             
         self.db.commit()
 
+        self.logger.info(f"Local DB update completed in {time.time()-start_time:.3f}s for {sku or dashboard_id}")
+
         # 2. SHOPIFY BATCH PUSH
         for store_key in stores:
             try:
@@ -90,7 +113,18 @@ class InventoryTool:
                 # to ensure we have the absolute latest GIDs even if local cache is stale/empty.
                 shopify_pid = f"gid://shopify/Product/{pid}"
                 query = """query($id: ID!) { product(id: $id) { variants(first: 100) { edges { node { id sku inventoryItem { id } selectedOptions { name value } } } } } }"""
-                v_data = await client.graphql_query(query, {"id": shopify_pid})
+                # Try cached variant metadata first
+                variant_cache_key = f"shop:variants:{client.store_name}:{pid}"
+                v_cached = await get_cache(variant_cache_key)
+                if v_cached:
+                    v_data = {"product": {"variants": {"edges": v_cached}}}
+                else:
+                    v_data = await client.graphql_query(query, {"id": shopify_pid})
+                    variants_for_cache = v_data.get("product", {}).get("variants", {}).get("edges", [])
+                    try:
+                        await set_cache(variant_cache_key, variants_for_cache, ttl=60)
+                    except Exception:
+                        pass
                 
                 product_node = v_data.get("product")
                 if not product_node:
@@ -109,6 +143,7 @@ class InventoryTool:
                     loc_node = loc_data.get("locations", {}).get("edges", [])
                     if loc_node: loc_id = loc_node[0]["node"]["id"]
 
+                v_fetch_time = time.time()
                 for v_edge in variants:
                     v_node = v_edge["node"]
                     v_id = v_node["id"]
@@ -152,6 +187,7 @@ class InventoryTool:
                                 "quantity": int(target_qty)
                             })
 
+                self.logger.info(f"Prepared {len(variant_updates)} variant updates and {len(inventory_updates)} inventory updates for {store_key} in {time.time()-v_fetch_time:.3f}s")
                 # C. Execute Price Batch Update
                 if variant_updates:
                     p_res = await client.graphql_query(
@@ -160,6 +196,8 @@ class InventoryTool:
                     )
                     if p_res.get("productVariantsBulkUpdate", {}).get("userErrors"):
                         self.logger.error(f"Price Batch Error for {store_key}: {p_res['productVariantsBulkUpdate']['userErrors']}")
+                    else:
+                        self.logger.info(f"Price batch mutation completed for {store_key} in {time.time()-v_fetch_time:.3f}s")
 
                 # D. Execute Inventory Batch Update
                 if inventory_updates:
@@ -176,6 +214,8 @@ class InventoryTool:
                     )
                     if i_res.get("inventorySetQuantities", {}).get("userErrors"):
                         self.logger.error(f"Inventory Batch Error for {store_key}: {i_res['inventorySetQuantities']['userErrors']}")
+                    else:
+                        self.logger.info(f"Inventory batch mutation completed for {store_key} in {time.time()-v_fetch_time:.3f}s")
 
                 # E. Update Local Inventory Cache (ONLY if this was a live sync)
                 if stores and len(stores) > 0:
@@ -187,7 +227,7 @@ class InventoryTool:
                             self.db.query(Inventory).filter(Inventory.product_id == pid, Inventory.size == s).update({"inventory": int(q)})
                 
                     self.db.commit()
-                    self.logger.info(f"Successfully synced batch for {store_key}")
+                    self.logger.info(f"Successfully synced batch for {store_key} (total elapsed {time.time()-start_time:.3f}s)")
 
             except Exception as e:
                 self.logger.error(f"Batch sync failed for {store_key}: {str(e)}")

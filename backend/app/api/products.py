@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Response, Request
+from fastapi import APIRouter, Depends, HTTPException, Response, Request, Query
 from sqlalchemy.orm import Session, joinedload, selectinload
 from typing import List, Optional, Any
 from pydantic import BaseModel
@@ -128,7 +128,7 @@ async def push_update_by_sku(
             retail_price=update.retail_price,
             wholesale_price=update.wholesale_price,
             notes=update.notes,
-            stores=update.stores or ["TDO", "WDO", "KOS" , "IM"],
+            stores=update.stores or ["TDO"],
             local_only=update.local_only,
             skip_content=update.skip_content
         )
@@ -146,9 +146,10 @@ async def push_update_by_sku(
         await release_lock(lock_name)
 
 @router.post("/revert/{sku}")
-async def revert_sync(sku: str, type: str = "all", db: Session = Depends(get_db)):
+async def revert_sync(sku: str, type: str = "all", stores: Optional[List[str]] = Query(None), db: Session = Depends(get_db)):
     prod_tool = ProductTool(db)
-    return await prod_tool.revert_to_backup(sku=sku, revert_type=type)
+    # If caller didn't provide stores, default to TDO only to speed up common reverts
+    return await prod_tool.revert_to_backup(sku=sku, stores=(stores or ["TDO"]), revert_type=type)
 
 @router.post("/{sku}/sync/{store_key}")
 async def sync_to_store(sku: str, store_key: str, db: Session = Depends(get_db)):
