@@ -130,12 +130,15 @@ export const apiService = {
   },
 
   // 2. Synchronization & AI
-  async pushProductUpdate(sku, payload, localOnly = false) {
-    const response = await api.post('/products/push-update', {
+  async pushProductUpdate(sku, payload = {}, localOnly = false, stores = ["TDO"]) {
+    // If caller didn't provide stores in payload, default to TDO only to avoid multi-store pushes
+    const body = {
       sku: sku,
       local_only: localOnly,
-      ...payload
-    });
+      ...payload,
+      stores: payload.stores || stores
+    };
+    const response = await api.post('/products/push-update', body);
     return response.data;
   },
 
@@ -153,8 +156,14 @@ export const apiService = {
     const response = await api.post(`/products/${productId}/sync/${storeKey}`);
     return response.data;
   },
-  async revertUpdate(sku, type = 'all') {
-    const response = await api.post(`/products/revert/${sku}?type=${type}`);
+
+  async revertUpdate(sku, type = 'all', stores = ["TDO"]) {
+    const response = await api.post(`/products/revert/${sku}`, null, {
+      params: {
+        type,
+        stores
+      }
+    });
     return response.data;
   },
 
