@@ -10,6 +10,9 @@ import Header from './Header'
 import ConfirmationDialog from './common/ConfirmationDialog'
 import KpiGrid from './merchandising/KpiGrid'
 import WorkspaceToolbar, { DEFAULT_CATALOG_VENDOR } from './product-workspace/WorkspaceToolbar'
+import ProductWorkspaceModal from './product-workspace/ProductWorkspaceModal'
+import UnifiedCatalogTable from './product-workspace/UnifiedCatalogTable'
+import MerchAnalyticsGrid from './merchandising/MerchAnalyticsGrid'
 import { apiService } from '../services/api'
 import { readJsonStorage, writeJsonStorage } from '../utils/storage'
 import toast from 'react-hot-toast'
@@ -38,6 +41,83 @@ const ANALYTICS_FIELDS = [
   'most_sold_color',
   'most_sold_size',
 ]
+
+const sumObjectValues = (obj) => {
+  if (!obj || typeof obj !== 'object') return 0;
+  return Object.values(obj).reduce((sum, val) => sum + (Number(val) || 0), 0);
+};
+
+const resolveUnitsSold = (p, merch) => {
+  if (merch?.units_sold) return merch.units_sold;
+
+  // Helper: sum an object map OR return the number directly
+  const toNum = (val) => {
+    if (val === null || val === undefined) return 0;
+    if (typeof val === 'number') return val;
+    if (typeof val === 'object') return sumObjectValues(val);
+    return Number(val) || 0;
+  };
+
+  // Priority 1: variant-level by-variant maps
+  const v30 = toNum(p.units_sold_30_by_variant);
+  const v60 = toNum(p.units_sold_60_by_variant);
+  const v7  = toNum(p.units_sold_7_by_variant);
+  const v90 = toNum(p.units_sold_by_variant);
+
+  if (v30 > 0 || v60 > 0 || v7 > 0 || v90 > 0) {
+    return { days_7: v7, days_30: v30, days_60: v60, days_90: v90 };
+  }
+
+  // Priority 2: if p.units_sold is already a multi-key object like { days_30, days_90 }
+  if (p.units_sold && typeof p.units_sold === 'object' && 
+      (p.units_sold.days_30 !== undefined || p.units_sold.days_90 !== undefined)) {
+    const val7  = p.units_sold.days_7  || 0;
+    const val30 = p.units_sold.days_30 || 0;
+    const val60 = p.units_sold.days_60 || 0;
+    const val90 = p.units_sold.days_90 || 0;
+    if (val7 > 0 || val30 > 0 || val60 > 0 || val90 > 0) {
+      return p.units_sold;
+    }
+  }
+
+  // Priority 3: sell_thru_details from backend (already a { days_30, days_90 } object)
+  if (p.sell_thru_details && typeof p.sell_thru_details === 'object') {
+    const d7  = Number(p.sell_thru_details.days_7  || 0);
+    const d30 = Number(p.sell_thru_details.days_30 || 0);
+    const d60 = Number(p.sell_thru_details.days_60 || 0);
+    const d90 = Number(p.sell_thru_details.days_90 || 0);
+    if (d7 > 0 || d30 > 0 || d60 > 0 || d90 > 0) {
+      return { days_7: d7, days_30: d30, days_60: d60, days_90: d90 };
+    }
+  }
+
+  // Priority 4: direct numeric scalar fields
+  const d30 = Number(p.sell_thru?.days_30 || p.shipstation_30 || p.units_sold_30 || 0);
+  const d60 = Number(p.sell_thru?.days_60 || p.shipstation_60 || p.units_sold_60 || 0);
+  const d90 = Number(p.sell_thru?.days_90 || p.shipstation_90 || p.units_sold_90 || 0);
+
+  return { days_7: 0, days_30: d30, days_60: d60, days_90: d90 };
+};
+
+const resolvePageviews = (p, merch) => {
+  if (merch?.pageviews) return merch.pageviews;
+  
+  const days_30 = Number(p.pageview_30 || p.pageviews_details?.days_30 || p.pageviews?.days_30 || 0);
+  const days_60 = Number(p.pageview_60 || p.pageviews_details?.days_60 || p.pageviews?.days_60 || 0);
+  const days_90 = Number(p.pageview_90 || p.pageviews_details?.days_90 || p.pageviews?.days_90 || 0);
+  
+  return { days_30, days_60, days_90 };
+};
+
+const resolveReturns = (p, merch) => {
+  if (merch?.returns) return merch.returns;
+  
+  const days_30 = Number(p.return_30 || p.returns_details?.days_30 || p.returns?.days_30 || 0);
+  const days_60 = Number(p.return_60 || p.returns_details?.days_60 || p.returns?.days_60 || 0);
+  const days_90 = Number(p.return_90 || p.returns_details?.days_90 || p.returns?.days_90 || 0);
+  
+  return { days_30, days_60, days_90 };
+};
 
 const mergePreservedAnalytics = (nextProducts, previousProducts) =>
   nextProducts.map((newProduct) => {
@@ -72,10 +152,13 @@ const MerchandisingReport = ({ globalStats, initialMode }) => {
   const [loading, setLoading] = useState(!globalStats)
   const [auditSearch, setAuditSearch] = useState('')
   const [merchSearch, setMerchSearch] = useState('')
-  const [activeVendor, setActiveVendor] = useState(initialMode === 'MERCH' ? 'TDO_MERCH' : DEFAULT_CATALOG_VENDOR)
+  const [activeVendor, setActiveVendor] = useState('UNIFIED')
+  const [unifiedVendorFilter, setUnifiedVendorFilter] = useState('ALL')
   const [activeStoreFilter, setActiveStoreFilter] = useState('ALL')
+  const [statusFilter, setStatusFilter] = useState('ALL')
   const [activeTimeframe, setActiveTimeframe] = useState('30')
   const [expandedRows, setExpandedRows] = useState(new Set())
+  const [drawerProductId, setDrawerProductId] = useState(null)
   const [selectedProduct, setSelectedProduct] = useState(null)
   const [activeIssue, setActiveIssue] = useState(null)
   const [proposedFixes, setProposedFixes] = useState({})
@@ -89,12 +172,14 @@ const MerchandisingReport = ({ globalStats, initialMode }) => {
   const [pushingStyle, setPushingStyle] = useState(null)
   const [activeStoreTabs, setActiveStoreTabs] = useState({})
   const isMerchMode = activeVendor === 'TDO_MERCH'
+  const isUnifiedMode = activeVendor === 'UNIFIED'
   const [currentPage, setCurrentPage] = useState(1)
   const itemsPerPage = 50
   const [totalCount, setTotalCount] = useState(0)
   const [merchSort, setMerchSort] = useState('newest')
-  const [merchTimeframe, setMerchTimeframe] = useState('90')
+  const [activeTagFilter, setActiveTagFilter] = useState('ALL')
   const [datePreset, setDatePreset] = useState('all')
+  const merchTimeframe = datePreset === '30d' ? '30' : '90'
   const [customDateFrom, setCustomDateFrom] = useState('')
   const [customDateTo, setCustomDateTo] = useState('')
   const [confirmationModal, setConfirmationModal] = useState(null)
@@ -103,6 +188,11 @@ const MerchandisingReport = ({ globalStats, initialMode }) => {
   const [isReverting, setIsReverting] = useState(false)
   const fetchSequenceRef = useRef(0)
   const filterKeyRef = useRef('')
+  const unifiedMerchCacheRef = useRef(null)  // cache merch data for unified mode
+  const dragStartX = useRef(0)
+  const dragStartY = useRef(0)
+  const isDragging = useRef(false)
+
 
   const getDateRange = useCallback(() => {
     if (datePreset === 'all') return { dateFrom: null, dateTo: null }
@@ -130,7 +220,98 @@ const MerchandisingReport = ({ globalStats, initialMode }) => {
     fetchSequenceRef.current = requestId
     if (!silent) setLoading(true)
     try {
-      if (currentVendor === 'TDO_MERCH') {
+      if (currentVendor === 'UNIFIED') {
+        // --- UNIFIED MODE: fetch catalog + merch in parallel, merge by style ---
+        let [catalogRes, catalogStatsRes, merchStatsRes] = await Promise.all([
+          apiService.getProducts(unifiedVendorFilter === 'ALL' ? '' : unifiedVendorFilter, page, itemsPerPage, auditSearch, dateFrom, dateTo),
+          apiService.getDashboardStats(unifiedVendorFilter === 'ALL' ? '' : unifiedVendorFilter, auditSearch, dateFrom, dateTo),
+          apiService.getMerchStats({
+            vendor: unifiedVendorFilter === 'ALL' ? '' : unifiedVendorFilter,
+            search: auditSearch,
+            timeRange: activeTimeframe,
+            dateFrom,
+            dateTo
+          }).catch(() => null)
+        ])
+        
+        const rawProducts = catalogRes.products || (Array.isArray(catalogRes) ? catalogRes : [])
+        const currentStyles = rawProducts.map(p => p.style).filter(Boolean).join(',')
+        
+        let rawMerchArr = []
+        if (currentStyles) {
+          const rawMerchRes = await apiService.getMerchProducts({ page: 1, limit: itemsPerPage, vendor: 'ALL', timeRange: '90', styles: currentStyles })
+          rawMerchArr = rawMerchRes.data || rawMerchRes.products || []
+        }
+        
+        const styleMap = {}
+        rawMerchArr.forEach(m => { styleMap[m.style] = m })
+
+        const parseSizes = (str) => {
+          if (!str) return {}
+          const res = {}
+          str.split(',').forEach(part => {
+            const match = part.trim().match(/(.+)\((-?\d+)\)/)
+            if (match) res[match[1]] = parseInt(match[2])
+          })
+          return res
+        }
+        const mapped = rawProducts.map(p => {
+          const storeHealth = {}
+          STORE_KEYS.forEach(s => {
+            const store = p.store_prices?.[s]
+            const isLinked = store?.linked || p[`${s.toLowerCase()}_product_id`]
+            if (isLinked) {
+              const rawStatus = store?.status?.toUpperCase() || p[`${s.toLowerCase()}_status`]?.toUpperCase() || null
+              storeHealth[s] = rawStatus === 'ACTIVE' ? 'ACTIVE' : rawStatus === 'DRAFT' ? 'DRAFT' : 'UNKNOWN'
+            } else {
+              storeHealth[s] = 'MISSING'
+            }
+          })
+          const merch = styleMap[p.style] || null
+          return {
+            ...p,
+            sku: p.style,
+            main_image: p.image_url,
+            stores: STORE_KEYS.filter(s => p.store_prices?.[s]?.linked || p[`${s.toLowerCase()}_product_id`]).join(','),
+            store_health: storeHealth,
+            retail_price: p.staged_price,
+            shopify_status: (
+              p.store_prices?.TDO?.status?.toUpperCase() === 'ACTIVE' ||
+              p.store_prices?.WDO?.status?.toUpperCase() === 'ACTIVE' ||
+              p.store_prices?.KOS?.status?.toUpperCase() === 'ACTIVE' ||
+              p.store_prices?.IM?.status?.toUpperCase() === 'ACTIVE'
+            ) ? 'active' : 'draft',
+            live_retail_price: p.store_prices?.TDO?.price,
+            live_wholesale_price: p.store_prices?.WDO?.price,
+            variants: Object.entries(parseSizes(p.staged_sizes)).map(([size, inventory]) => ({ size, inventory })),
+            has_merch_data: !!merch,
+            pageviews: resolvePageviews(p, merch),
+            pageviews_details: resolvePageviews(p, merch),
+            units_sold: resolveUnitsSold(p, merch),
+            sell_thru: resolveUnitsSold(p, merch),
+            sell_thru_details: resolveUnitsSold(p, merch),
+            returns: resolveReturns(p, merch),
+            tags_categorized: merch?.tags_categorized ?? p.tags_categorized ?? null,
+          }
+        })
+        if (fetchSequenceRef.current !== requestId) return
+        setProducts(prev => mergePreservedAnalytics(mapped, prev))
+        setTotalCount(catalogRes.total_count || rawProducts.length)
+        const raw = catalogStatsRes.stats || catalogStatsRes
+        setStats({
+          total: raw.total_styles || 0,
+          total_units: raw.total_inventory || 0,
+          out_of_stock: raw.out_of_stock || 0,
+          kos_missing: raw.kos_missing || 0,
+          wdo_missing: raw.wdo_missing || 0,
+          tdo_missing: raw.tdo_missing || 0,
+          im_missing: raw.im_missing || 0,
+          vendors: raw.vendors,
+          store_health: raw.store_health,
+          total_pageviews: merchStatsRes?.total_pageviews || rawMerchArr.reduce((s, m) => s + (m.pageviews?.days_90 || 0), 0),
+          total_sold_90: merchStatsRes?.total_sold_90 || rawMerchArr.reduce((s, m) => s + (m.units_sold?.days_90 || 0), 0),
+        })
+      } else if (currentVendor === 'TDO_MERCH') {
         // --- TDO MERCHANDISE MODE (Port 8003) ---
         const [prodRes, statsRes] = await Promise.all([
           apiService.getMerchProducts({
@@ -209,6 +390,7 @@ const MerchandisingReport = ({ globalStats, initialMode }) => {
           return res
         }
 
+        const drafts = readJsonStorage(MERCH_DRAFTS_STORAGE_KEY, {});
         const mapped = rawProducts.map(p => {
           const storeHealth = {}
           STORE_KEYS.forEach(s => {
@@ -224,10 +406,16 @@ const MerchandisingReport = ({ globalStats, initialMode }) => {
             }
           })
 
+          const pid = p.internal_id || p.product_id || p.id;
+          const draft = drafts[pid];
+
           return {
             ...p,
             sku: p.style,
             main_image: p.image_url,
+            internal_id: pid,
+            tags_categorized: draft || p.tags_categorized || { top: [], bestseller: [], special: [], others: [] },
+            needs_sync: draft ? true : (p.needs_sync || false),
             stores: STORE_KEYS.filter(s =>
               p.store_prices?.[s]?.linked ||
               p[`${s.toLowerCase()}_product_id`]
@@ -243,6 +431,12 @@ const MerchandisingReport = ({ globalStats, initialMode }) => {
             live_retail_price: p.store_prices?.TDO?.price,
             live_wholesale_price: p.store_prices?.WDO?.price,
             variants: Object.entries(parseSizes(p.staged_sizes)).map(([size, inventory]) => ({ size, inventory })),
+            pageviews: resolvePageviews(p, null),
+            pageviews_details: resolvePageviews(p, null),
+            units_sold: resolveUnitsSold(p, null),
+            sell_thru: resolveUnitsSold(p, null),
+            sell_thru_details: resolveUnitsSold(p, null),
+            returns: resolveReturns(p, null),
           }
         })
         if (fetchSequenceRef.current !== requestId) return
@@ -265,13 +459,17 @@ const MerchandisingReport = ({ globalStats, initialMode }) => {
     } finally {
       if (!silent && fetchSequenceRef.current === requestId) setLoading(false)
     }
-  }, [activeVendor, currentPage, itemsPerPage, merchSearch, merchSort, merchTimeframe, auditSearch, getDateRange])
+  }, [activeVendor, currentPage, itemsPerPage, unifiedVendorFilter, merchSearch, merchSort, merchTimeframe, auditSearch, getDateRange, activeTagFilter])
 
   useEffect(() => {
     const { dateFrom, dateTo } = getDateRange()
-    const filterKey = [activeVendor, auditSearch, merchSearch, activeStoreFilter, datePreset, dateFrom, dateTo].join('|')
+    const filterKey = [activeVendor, unifiedVendorFilter, auditSearch, merchSearch, activeStoreFilter, datePreset, dateFrom, dateTo, activeTagFilter, merchSort].join('|')
     const filtersChanged = filterKeyRef.current !== filterKey
     filterKeyRef.current = filterKey
+    // Invalidate merch cache when switching modes so fresh data is always loaded on return to UNIFIED
+    if (activeVendor !== 'UNIFIED') {
+      unifiedMerchCacheRef.current = null
+    }
     if (filtersChanged && currentPage !== 1) {
       setCurrentPage(1)
       return
@@ -281,7 +479,10 @@ const MerchandisingReport = ({ globalStats, initialMode }) => {
       fetchData(false, activeVendor, currentPage)
     }, auditSearch || merchSearch ? 400 : 0)
     return () => clearTimeout(delayDebounceFn)
-  }, [activeVendor, activeStoreFilter, auditSearch, currentPage, fetchData, merchSearch, merchSort, merchTimeframe, activeTimeframe, getDateRange, datePreset])
+  }, [activeVendor, unifiedVendorFilter, activeStoreFilter, auditSearch, currentPage, fetchData, merchSearch, merchSort, merchTimeframe, activeTimeframe, getDateRange, datePreset, activeTagFilter])
+
+
+
 
   const toggleExpand = (id) => {
     const newExpanded = new Set(expandedRows)
@@ -370,11 +571,16 @@ const MerchandisingReport = ({ globalStats, initialMode }) => {
     });
   }
 
-  const handleTagUpdate = (productId, category, action, tag) => {
+  const handleTagUpdate = (productId, category, action, tag, storeKey = 'TDO') => {
     const product = products.find(p => p.product_id === productId || p.internal_id === productId);
     if (!product) return;
 
-    const currentTags = JSON.parse(JSON.stringify(product.tags_categorized || { top: [], bestseller: [], special: [] }));
+    let currentTags;
+    if (storeKey === 'TDO') {
+      currentTags = JSON.parse(JSON.stringify(product.tags_categorized || { top: [], bestseller: [], special: [] }));
+    } else {
+      currentTags = JSON.parse(JSON.stringify(product.store_tags?.[storeKey] || { top: [], bestseller: [], special: [] }));
+    }
 
     if (!currentTags[category]) currentTags[category] = [];
     if (action === 'add') {
@@ -384,17 +590,25 @@ const MerchandisingReport = ({ globalStats, initialMode }) => {
     }
 
     // Local Update (useState + localStorage)
-    setProducts(prev => prev.map(p => (p.product_id === productId || p.internal_id === productId)
-      ? { ...p, tags_categorized: currentTags, sync_status: { ...(p.sync_status || {}), tags: true } }
-      : p
-    ));
+    setProducts(prev => prev.map(p => {
+      if (p.product_id === productId || p.internal_id === productId) {
+        if (storeKey === 'TDO') {
+          return { ...p, tags_categorized: currentTags, sync_status: { ...(p.sync_status || {}), tags: true } };
+        } else {
+          const nextStoreTags = { ...(p.store_tags || {}), [storeKey]: currentTags };
+          return { ...p, store_tags: nextStoreTags, sync_status: { ...(p.sync_status || {}), tags: true } };
+        }
+      }
+      return p;
+    }));
 
     // Save to localStorage
-    const drafts = readJsonStorage(MERCH_DRAFTS_STORAGE_KEY, {});
+    const draftsKey = `${MERCH_DRAFTS_STORAGE_KEY}_${storeKey}`;
+    const drafts = readJsonStorage(draftsKey, {});
     drafts[productId] = currentTags;
-    writeJsonStorage(MERCH_DRAFTS_STORAGE_KEY, drafts);
+    writeJsonStorage(draftsKey, drafts);
 
-    toast.info(`Tag ${action === 'add' ? 'added' : 'removed'} to drafts`, { icon: '📝' });
+    toast.info(`Tag ${action === 'add' ? 'added' : 'removed'} to drafts for ${storeKey}`, { icon: '📝' });
   };
 
   const pushToShopifyMerch = async (product) => {
@@ -634,12 +848,119 @@ const MerchandisingReport = ({ globalStats, initialMode }) => {
   // Removed top-level loading check to allow localized loading in the table body
 
   const filtered = products.filter(p => {
-    if (activeStoreFilter === 'ALL') return true;
-    return p.store_health?.[activeStoreFilter] !== 'MISSING';
+    // 1. Store Filter
+    if (activeStoreFilter !== 'ALL' && (!p.store_health || p.store_health[activeStoreFilter] === 'MISSING')) {
+      return false;
+    }
+
+    // 2. Status Filter
+    if (statusFilter !== 'ALL') {
+      if (activeStoreFilter !== 'ALL') {
+        const storeStatus = p.store_health?.[activeStoreFilter] || 'UNKNOWN';
+        if (storeStatus !== statusFilter) return false;
+      } else {
+        if (statusFilter === 'ACTIVE') {
+          if (p.shopify_status !== 'active') return false;
+        } else if (statusFilter === 'DRAFT') {
+          if (p.shopify_status !== 'draft') return false;
+        } else if (statusFilter === 'MISSING') {
+          const hasMissing = Object.values(p.store_health || {}).includes('MISSING');
+          if (!hasMissing) return false;
+        }
+      }
+    }
+
+    // 3. Tag Filter — supports best:X, top:X, and special tags
+    if (activeTagFilter !== 'ALL') {
+      const tagValue = activeTagFilter; // e.g. "best:Seller", "top:MOB", "No PROM"
+      const tagLower = tagValue.toLowerCase();
+      const rawTags = (p.tags || p.staged_tags || '').toLowerCase();
+      
+      // Direct match in raw Shopify tags string (covers best:Seller, top:MOB, No PROM, etc)
+      const hasRawTag = rawTags.includes(tagLower);
+      
+      // Match in parsed tags_categorized structure
+      let hasCategorizedMatch = false;
+      if (p.tags_categorized) {
+        if (tagLower.startsWith('best:')) {
+          // e.g. "best:seller" -> look in tags_categorized.bestseller for "seller"
+          const label = tagLower.slice(5); // after "best:"
+          hasCategorizedMatch = (p.tags_categorized.bestseller || []).some(t => t.toLowerCase() === label || t.toLowerCase().includes(label));
+        } else if (tagLower.startsWith('top:')) {
+          // e.g. "top:mob" -> look in tags_categorized.top for "mob"
+          const label = tagLower.slice(4); // after "top:"
+          hasCategorizedMatch = (p.tags_categorized.top || []).some(t => t.toLowerCase() === label || t.toLowerCase().includes(label));
+        } else {
+          // Special tags — check in tags_categorized.special
+          hasCategorizedMatch = (p.tags_categorized.special || []).some(t => t.toLowerCase() === tagLower || t.toLowerCase().includes(tagLower));
+        }
+      }
+      
+      if (!hasRawTag && !hasCategorizedMatch) return false;
+    }
+
+    return true;
   })
-  const visibleTotalCount = activeStoreFilter === 'ALL' ? totalCount : filtered.length
+
+  // 4. Client-side Sort
+  const sorted = [...filtered].sort((a, b) => {
+    if (merchSort === 'newest') {
+      return new Date(b.created_at || b.published_at || 0) - new Date(a.created_at || a.published_at || 0);
+    }
+    if (merchSort === 'oldest') {
+      return new Date(a.created_at || a.published_at || 0) - new Date(b.created_at || b.published_at || 0);
+    }
+    if (merchSort === 'high_views') {
+      const getVal = (item) => {
+        const details = item.pageviews_details || item.pageviews || {};
+        return details.days_90 || details.days_30 || 0;
+      };
+      return getVal(b) - getVal(a);
+    }
+    if (merchSort === 'high_sold') {
+      const getVal = (item) => {
+        const details = item.units_sold || item.sell_thru || {};
+        return details.days_90 || details.days_30 || 0;
+      };
+      return getVal(b) - getVal(a);
+    }
+    if (merchSort === 'high_returns') {
+      const getVal = (item) => {
+        const details = item.returns || {};
+        return details.days_90 || details.days_30 || 0;
+      };
+      return getVal(b) - getVal(a);
+    }
+    return 0;
+  });
+
+  const visibleTotalCount = activeStoreFilter === 'ALL' ? totalCount : sorted.length
   const totalPages = Math.ceil(visibleTotalCount / itemsPerPage)
-  const currentItems = filtered
+  const currentItems = sorted
+  const drawerProduct = products.find(prod => prod.internal_id === drawerProductId)
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        setDrawerProductId(null)
+        return
+      }
+
+      if (!drawerProductId) return
+
+      const currentIndex = currentItems.findIndex(prod => prod.internal_id === drawerProductId)
+      if (currentIndex === -1) return
+
+      if (e.key === 'ArrowLeft' && currentIndex > 0) {
+        setDrawerProductId(currentItems[currentIndex - 1].internal_id)
+      } else if (e.key === 'ArrowRight' && currentIndex < currentItems.length - 1) {
+        setDrawerProductId(currentItems[currentIndex + 1].internal_id)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [drawerProductId, currentItems])
+
 
   return (
     <div className="audit-dashboard-content">
@@ -652,23 +973,24 @@ const MerchandisingReport = ({ globalStats, initialMode }) => {
         activeStoreFilter={activeStoreFilter}
         setActiveStoreFilter={setActiveStoreFilter}
         timeRange={merchTimeframe}
-        setTimeRange={setMerchTimeframe}
+        setTimeRange={() => {}}
         showTimeRange={isMerchMode}
         showStoreFilter={false}
       />
 
-      <KpiGrid isMerchMode={isMerchMode} merchTimeframe={merchTimeframe} stats={stats} />
+      <KpiGrid isMerchMode={isMerchMode} isUnifiedMode={isUnifiedMode} merchTimeframe={merchTimeframe} stats={stats} />
 
       <WorkspaceToolbar
-        isMerchMode={isMerchMode}
-        activeVendor={activeVendor}
-        setActiveVendor={setActiveVendor}
+        activeVendor={unifiedVendorFilter}
+        setActiveVendor={setUnifiedVendorFilter}
         activeStoreFilter={activeStoreFilter}
         setActiveStoreFilter={setActiveStoreFilter}
+        statusFilter={statusFilter}
+        setStatusFilter={setStatusFilter}
+        activeTagFilter={activeTagFilter}
+        setActiveTagFilter={setActiveTagFilter}
         merchSort={merchSort}
         setMerchSort={setMerchSort}
-        merchTimeframe={merchTimeframe}
-        setMerchTimeframe={setMerchTimeframe}
         stats={stats}
         datePreset={datePreset}
         setDatePreset={setDatePreset}
@@ -679,811 +1001,37 @@ const MerchandisingReport = ({ globalStats, initialMode }) => {
       />
 
       {/* Table */}
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm overflow-x-auto">
-        <table className="w-full border-collapse">
-          <thead>
-            {isMerchMode ? (
-              <tr className="bg-slate-50">
-                <th className="p-4 w-[50px] border-b border-slate-200" />
-                <th className="p-4 text-left text-[0.75rem] font-extrabold text-slate-500 border-b border-slate-200 uppercase tracking-wider w-[80px]">ASSET</th>
-                <th className="p-4 text-left text-[0.75rem] font-extrabold text-slate-500 border-b border-slate-200 uppercase tracking-wider min-w-[200px]">STYLE / PRODUCT</th>
-                <th className="p-4 text-left text-[0.75rem] font-extrabold text-slate-500 border-b border-slate-200 uppercase tracking-wider w-[120px]">VENDOR</th>
-                <th className="p-4 text-center text-[0.75rem] font-extrabold text-slate-500 border-b border-slate-200 uppercase tracking-wider w-[100px]">STATUS</th>
-                <th className="p-4 text-center text-[0.75rem] font-extrabold text-slate-500 border-b border-slate-200 uppercase tracking-wider w-[120px]">INVENTORY</th>
-                <th className="p-4 text-center text-[0.75rem] font-extrabold text-slate-500 border-b border-slate-200 uppercase tracking-wider w-[160px]">VIEWS (30/60/90)</th>
-                <th className="p-4 text-center text-[0.75rem] font-extrabold text-slate-500 border-b border-slate-200 uppercase tracking-wider w-[160px]">SOLD (30/60/90)</th>
-                <th className="p-4 text-center text-[0.75rem] font-extrabold text-slate-500 border-b border-slate-200 uppercase tracking-wider w-[160px]">RETURNS (30/60/90)</th>
-              </tr>
-            ) : (
-              <tr className="bg-slate-50">
-                <th className="p-4 w-[50px] border-b border-slate-200" />
-                <th className="p-4 text-left text-[0.75rem] font-extrabold text-slate-500 border-b border-slate-200 uppercase tracking-wider w-[80px]">ASSET</th>
-                <th className="p-4 text-left text-[0.75rem] font-extrabold text-slate-500 border-b border-slate-200 uppercase tracking-wider min-w-[250px]">STYLE / PRODUCT</th>
-                <th className="p-4 text-center text-[0.75rem] font-extrabold text-slate-500 border-b border-slate-200 uppercase tracking-wider w-[100px]">RETAIL PRICE</th>
-                <th className="p-4 text-center text-[0.75rem] font-extrabold text-slate-500 border-b border-slate-200 uppercase tracking-widest w-[130px]">Total Stock</th>
-              </tr>
-            )}
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr>
-                <td colSpan={isMerchMode ? 9 : 5} className="p-32 text-center">
-                  <div className="flex flex-col items-center gap-4">
-                    <RefreshCw className="animate-spin text-brand" size={40} />
-                    <div className="text-slate-400 font-extrabold text-sm uppercase tracking-widest">Updating Catalog View...</div>
-                  </div>
-                </td>
-              </tr>
-            ) : currentItems.map(p => (
-              <Fragment key={p.internal_id}>
-                <tr className="border-b border-slate-100 hover:bg-slate-50 transition-colors" style={{ transform: 'translateZ(0)' }}>
-                  <td className="p-5 text-center">
-                    <ChevronRight
-                      size={20}
-                      onClick={() => toggleExpand(p.internal_id)}
-                      className={`cursor-pointer transition-transform text-slate-400 ${expandedRows.has(p.internal_id) ? 'rotate-90' : ''}`}
-                    />
-                  </td>
-                  <td className="p-5">
-                    <div className="w-14 h-14 rounded-xl overflow-hidden border border-slate-200 bg-slate-100 flex items-center justify-center">
-                      <img
-                        src={p.main_image}
-                        alt="product"
-                        loading="lazy"
-                        className="w-full h-full object-cover transition-opacity duration-300 opacity-0"
-                        onLoad={(e) => e.target.classList.remove('opacity-0')}
-                      />
-                    </div>
-                  </td>
-                  <td className="p-5">
-                    <div className="flex flex-col gap-1">
-                      <div className="flex items-center gap-3">
-                        <div className="text-[0.9rem] font-black text-slate-900 tracking-tight">
-                          {p.style}
-                        </div>
-                        {isMerchMode ? (
-                          (p.top_tags?.length > 0) && (
-                            <Tag size={16} className="text-brand opacity-60" />
-                          )
-                        ) : getStatusBadge(p.shopify_status, true)}
-                        {isMerchMode && (p.sync_status?.tags || p.needs_sync) && (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); pushToShopifyMerch(p); }}
-                            disabled={pushingStyle === p.sku}
-                            className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[0.6rem] font-black uppercase tracking-widest bg-indigo-600 text-white shadow-md hover:bg-indigo-700 transition-all w-fit cursor-pointer ml-2"
-                          >
-                            {pushingStyle === p.sku ? <RefreshCw size={10} className="animate-spin" /> : <ArrowUpRight size={10} />}
-                            PUSH
-                          </button>
-                        )}
-                      </div>
-                      <div className="text-[0.7rem] text-slate-400 font-bold truncate max-w-[200px]" title={p.title}>{p.title}</div>
-                    </div>
-                  </td>
-
-                  {isMerchMode && (
-                    <>
-                      <td className="p-5">
-                        <div className="text-[0.8rem] font-bold text-slate-600 uppercase tracking-tight truncate max-w-[120px]" title={p.vendor}>
-                          {p.vendor || 'Unknown'}
-                        </div>
-                      </td>
-                      <td className="p-5 text-center">
-                        {getStatusBadge(p.shopify_status)}
-                      </td>
-                    </>
-                  )}
-
-                  {isMerchMode ? (
-                    <>
-                      <td className="p-5 text-center">
-                        <div className="flex flex-col items-center justify-center">
-                          <div className={`px-3 py-1.5 rounded-xl text-[0.9rem] font-black tracking-tight flex items-center gap-2 border shadow-sm transition-all ${p.total_inventory <= 0 ? 'bg-rose-50 text-rose-600 border-rose-100 shadow-rose-100/50' : p.total_inventory < 5 ? 'bg-amber-50 text-amber-600 border-amber-100 shadow-amber-100/50' : 'bg-emerald-50 text-emerald-600 border-emerald-100 shadow-emerald-100/50'}`}>
-                            <Package size={14} className="opacity-70" />
-                            {p.total_inventory}
-                          </div>
-                        </div>
-                      </td>
-                      {/* space added between */}
-                      <td className="p-5 text-center">
-                        <div className="flex justify-center gap-10">
-                          <span className={`text-[0.8rem] ${merchTimeframe === '30' ? 'text-indigo-600 font-black scale-105' : 'text-slate-500 font-bold opacity-60'}`}>{(p.pageviews?.days_30 || 0).toLocaleString()}</span>
-                          <span className={`text-[0.8rem] ${merchTimeframe === '60' ? 'text-indigo-600 font-black scale-105' : 'text-slate-500 font-bold opacity-60'}`}>{(p.pageviews?.days_60 || 0).toLocaleString()}</span>
-                          <span className={`text-[0.8rem] ${merchTimeframe === '90' ? 'text-indigo-600 font-black scale-105' : 'text-slate-500 font-bold opacity-60'}`}>{(p.pageviews?.days_90 || 0).toLocaleString()}</span>
-                        </div>
-                      </td>
-                      <td className="p-5 text-center">
-                        <div className="flex justify-center gap-10">
-                          <span className={`text-[0.8rem] ${merchTimeframe === '30' ? 'text-emerald-600 font-black scale-105' : 'text-slate-500 font-bold opacity-60'}`}>{(p.units_sold?.days_30 || 0).toLocaleString()}</span>
-                          <span className={`text-[0.8rem] ${merchTimeframe === '60' ? 'text-emerald-600 font-black scale-105' : 'text-slate-500 font-bold opacity-60'}`}>{(p.units_sold?.days_60 || 0).toLocaleString()}</span>
-                          <span className={`text-[0.8rem] ${merchTimeframe === '90' ? 'text-emerald-600 font-black scale-105' : 'text-slate-500 font-bold opacity-60'}`}>{(p.units_sold?.days_90 || 0).toLocaleString()}</span>
-                        </div>
-                      </td>
-                      <td className="p-5 text-center">
-                        <div className="flex justify-center gap-3">
-                          <span className={`text-[0.8rem] ${merchTimeframe === '30' ? 'text-rose-600 font-black scale-105' : 'text-slate-500 font-bold opacity-60'}`}>{(p.returns?.days_30 || 0).toLocaleString()}</span>
-                          <span className={`text-[0.8rem] ${merchTimeframe === '60' ? 'text-rose-600 font-black scale-105' : 'text-slate-500 font-bold opacity-60'}`}>{(p.returns?.days_60 || 0).toLocaleString()}</span>
-                          <span className={`text-[0.8rem] ${merchTimeframe === '90' ? 'text-rose-600 font-black scale-105' : 'text-slate-500 font-bold opacity-60'}`}>{(p.returns?.days_90 || 0).toLocaleString()}</span>
-                        </div>
-                      </td>
-                    </>
-                  ) : (
-                    <>
-                      <td className="p-5 text-center relative group">
-                        <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-all duration-300">
-                          {/* Push Icon - Visible only when price is actually different from live */}
-                          {p.sync_status?.price && (
-                            <button
-                              onClick={(e) => { e.stopPropagation(); pushPriceToShopify(p); }}
-                              className="p-1 bg-emerald-50 text-emerald-600 rounded-md hover:bg-emerald-600 hover:text-white transition-all shadow-sm border border-emerald-100 cursor-pointer"
-                              title="Push Price to Shopify"
-                            >
-                              <RefreshCw size={10} />
-                            </button>
-                          )}
-
-                          {/* Revert Icon - Enabled ONLY after a push has occurred */}
-                          <button
-                            disabled={!p.has_pushed_price}
-                            onClick={(e) => { e.stopPropagation(); handleRevertPrice(p); }}
-                            className={`p-1 rounded-md transition-all shadow-sm border ${p.has_pushed_price ? 'bg-rose-50 text-rose-600 border-rose-100 hover:bg-rose-600 hover:text-white cursor-pointer' : 'bg-slate-50 text-slate-300 border-slate-100 cursor-not-allowed opacity-50'}`}
-                            title={p.has_pushed_price ? "Undo last Shopify push" : "No push to revert"}
-                          >
-                            <RotateCcw size={10} />
-                          </button>
-                        </div>
-
-                        {/* edit price */}
-                        {editingPrice?.id === p.internal_id && editingPrice?.field === 'retail' ? (
-                          <div className="flex items-center gap-1 justify-center">
-                            <input
-                              autoFocus
-                              type="number"
-                              value={editingPrice.value}
-                              onChange={(e) => setEditingPrice({ ...editingPrice, value: e.target.value })}
-                              onKeyDown={(e) => { if (e.key === 'Enter') savePrice(); if (e.key === 'Escape') setEditingPrice(null); }}
-                              onBlur={savePrice}
-                              className="w-[110px] text-[0.85rem] font-black border-2 border-indigo-500 rounded-lg px-2 py-1 outline-none shadow-sm"
-                            />
-                            <Check size={16} className="text-emerald-500 cursor-pointer hover:scale-110 transition-transform" onClick={savePrice} />
-                          </div>
-                        ) : (
-                          <div
-                            onClick={() => setEditingPrice({ id: p.internal_id, sku: p.sku, field: 'retail', value: p.retail_price, product_id: p.product_id })}
-                            className={`text-[0.9rem] font-black cursor-pointer hover:bg-slate-50 py-1 rounded transition-all ${p.sync_status?.price ? 'text-amber-600' : 'text-slate-700 hover:text-indigo-600'}`}
-                          >
-                            ${p.retail_price}
-                          </div>
-                        )}
-                        {p.sync_status?.tags && (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); pushToShopifyMerch(p); }}
-                            disabled={pushingStyle === p.sku}
-                            className="mt-2 flex items-center gap-1.5 px-3 py-1 rounded-full text-[0.6rem] font-black uppercase tracking-wider bg-brand text-white shadow-md hover:bg-brand/90 transition-all mx-auto"
-                          >
-                            {pushingStyle === p.sku ? <RefreshCw size={10} className="animate-spin" /> : <ArrowUpRight size={10} />}
-                            Push
-                          </button>
-                        )}
-                      </td>
-                      <td className="p-5 text-center">
-                        <div className="flex flex-col items-center justify-center">
-                          <div className={`px-3 py-1.5 rounded-xl text-[0.9rem] font-black tracking-tight flex items-center gap-2 border shadow-sm transition-all ${p.total_inventory <= 0 ? 'bg-rose-50 text-rose-600 border-rose-100 shadow-rose-100/50' : p.total_inventory < 5 ? 'bg-amber-50 text-amber-600 border-amber-100 shadow-amber-100/50' : 'bg-emerald-50 text-emerald-600 border-emerald-100 shadow-emerald-100/50'}`}>
-                            <Package size={14} className="opacity-70" />
-                            {p.total_inventory}
-                          </div>
-                        </div>
-                      </td>
-                    </>
-                  )}
-                </tr>
-
-                {expandedRows.has(p.internal_id) && (() => {
-                  const linkedStores = STORE_KEYS.filter(sKey => p.store_prices?.[sKey]?.linked);
-                  const selectedStoreKey = activeStoreTabs[p.internal_id];
-                  const activeStoreKey = linkedStores.includes(selectedStoreKey) ? selectedStoreKey : (linkedStores[0] || 'TDO');
-                  const activeStore = p.store_prices?.[activeStoreKey] || {};
-                  const activeColorVars = activeStore.color_variants || {};
-                  const activeColorTotals = activeStore.color_totals || {};
-                  const activeStoreVariants = Array.isArray(activeStore.variants) ? activeStore.variants : [];
-                  const variantColors = [...new Set(activeStoreVariants.map(v => v.color).filter(Boolean))];
-                  const colorKeys = Object.keys(activeColorVars).length > 0 ? Object.keys(activeColorVars) : variantColors;
-                  const selectedColor = selectedColors[p.internal_id];
-                  const activeColor = colorKeys.includes(selectedColor) ? selectedColor : (colorKeys[0] || null);
-                  const activeVariants = Object.keys(activeColorVars).length > 0
-                    ? Object.entries(activeColorVars[activeColor] || {}).map(([size, inv]) => ({ size, inventory: inv, color: activeColor }))
-                    : activeStoreVariants.filter(v => !activeColor || v.color === activeColor);
-                  const displayTotalStock = activeStore.inventory ?? 0;
-                  const displayPrice = activeStore.price;
-                  const activeAdminLink = p.admin_links?.[activeStoreKey.toLowerCase()];
-                  const activePriceField = activeStoreKey === 'TDO' ? 'retail' : 'wholesale';
-                  const activeSyncKey = activeStoreKey === 'TDO' ? 'price' : 'wholesale';
-
-
-                  if (isMerchMode) {
-                    const activeStoreKey = activeStoreTabs[p.internal_id] || 'TDO';
-                    const activeStore = p.store_prices?.[activeStoreKey] || {};
-                    const activeStoreVariants = activeStore.variants || p.variants || [];
-                    const colors = [...new Set(activeStoreVariants.map(v => v.color) || [])];
-                    const activeColor = selectedColors[p.internal_id] || colors[0];
-                    const activeVariants = activeStoreVariants.filter(v => v.color === activeColor) || [];
-                    const breakdownRange = breakdownTimeRanges[p.internal_id] || '90';
-                    const displayTotalStock = activeStore.inventory !== undefined ? activeStore.inventory : p.total_inventory;
-                    const displayPrice = activeStore.price !== undefined ? activeStore.price : p.retail_price;
-
-                    // Pre-calculate color metrics for the buttons
-                    const colorMetrics = colors.reduce((acc, c) => {
-                      const vars = activeStoreVariants.filter(v => v.color === c) || [];
-                      acc[c] = {
-                        inv: vars.reduce((sum, v) => sum + (v.inventory || 0), 0),
-                        sold: vars.reduce((sum, v) => {
-                          const vKey = `${c?.toString().toLowerCase()}-${v.size?.toString().toLowerCase()}`;
-                          if (breakdownRange === '30') return sum + (p.units_sold_30_by_variant?.[vKey] || 0);
-                          if (breakdownRange === '60') return sum + (p.units_sold_60_by_variant?.[vKey] || 0);
-                          return sum + (p.units_sold_by_variant?.[vKey] || 0);
-                        }, 0)
-                      };
-                      return acc;
-                    }, {});
-
-                    return (
-                      <tr className="bg-slate-50">
-                        <td colSpan={isMerchMode ? 9 : 5} className="p-4">
-                          <div className="bg-white rounded-xl border border-slate-200 p-5 grid gap-6 shadow-sm" style={{ gridTemplateColumns: '240px 1fr' }}>
-                            {/* LEFT COLUMN: IMAGE */}
-                            <div className="text-center">
-                              <div className="rounded-xl shadow-sm overflow-hidden bg-slate-100 aspect-[2/3] border border-slate-200">
-                                <img
-                                  src={p.main_image}
-                                  alt="expanded"
-                                  loading="lazy"
-                                  className="w-full h-full object-cover transition-opacity duration-500 opacity-0"
-                                  onLoad={(e) => e.target.classList.remove('opacity-0')}
-                                />
-                              </div>
-                            </div>
-
-                            {/* RIGHT COLUMN: DETAILS */}
-                            <div className="min-w-0">
-                              {/* STORE SWITCHER */}
-                              <div className="mb-6 bg-slate-50 p-2 rounded-xl flex flex-wrap items-center justify-between gap-3 border border-slate-200">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  {STORE_KEYS.map(sKey => {
-                                    const storeObj = p.store_prices?.[sKey];
-                                    if (!storeObj?.linked) return null;
-                                    const isActive = activeStoreKey === sKey;
-                                    return (
-                                      <button
-                                        key={sKey}
-                                        onClick={() => setActiveStoreTabs(prev => ({ ...prev, [p.internal_id]: sKey }))}
-                                        className={`px-5 py-2.5 rounded-xl text-[0.8rem] font-black transition-all flex items-center gap-2.5 cursor-pointer ${isActive
-                                          ? 'bg-slate-900 text-white shadow-lg shadow-slate-900/20 ring-2 ring-slate-900/10'
-                                          : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200/80 shadow-sm'
-                                          }`}
-                                      >
-                                        <span>{STORE_LABELS[sKey]}</span>
-                                        <span className={`text-[0.6rem] px-2 py-0.5 rounded-md font-extrabold uppercase tracking-wider ${storeObj.status === 'ACTIVE' ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-600 border border-amber-500/20'
-                                          }`}>
-                                          {storeObj.status}
-                                        </span>
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-
-                              </div>
-
-                              {/* HEADER AREA */}
-                              <div className="flex items-center justify-between mb-8">
-                                <div className="flex items-center gap-4">
-                                  <h3 className="text-3xl font-black text-slate-900 tracking-tighter m-0">{p.style}</h3>
-                                </div>
-
-                              </div>
-
-                              {/* TAGS MANAGEMENT CARD */}
-                              <div className="mb-5 bg-slate-50 rounded-xl border border-slate-200 p-5">
-                                <div className="text-[0.65rem] font-black text-slate-400 uppercase tracking-[0.2em] mb-6 flex items-center justify-between">
-                                  <div className="flex items-center gap-3">
-                                    <div className="p-1.5 bg-white rounded-lg shadow-sm border border-slate-100">
-                                      <Tag size={14} className="text-slate-400" />
-                                    </div>
-                                    TAGS MANAGEMENT
-                                  </div>
-                                  {(p.sync_status?.tags || p.needs_sync) && (
-                                    <button
-                                      onClick={() => pushToShopifyMerch(p)}
-                                      disabled={pushingStyle === p.sku}
-                                      className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl text-[0.7rem] font-black hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 disabled:opacity-50"
-                                    >
-                                      {pushingStyle === p.sku ? <RefreshCw size={12} className="animate-spin" /> : <ArrowUpRight size={12} />}
-                                      PUSH
-                                    </button>
-                                  )}
-                                </div>
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                                  <div>
-                                    <div className="flex items-center gap-3 mb-4">
-                                      <span className="text-[0.65rem] font-black text-indigo-600 uppercase tracking-[0.15em] bg-indigo-50 px-3 py-1 rounded-lg">Top Tags</span>
-                                      {addingTag?.product_id === p.internal_id && addingTag?.category === 'top' ? (
-                                        <input
-                                          autoFocus
-                                          value={newTagInput}
-                                          onChange={(e) => setNewTagInput(e.target.value)}
-                                          onKeyDown={(e) => {
-                                            if (e.key === 'Enter' && newTagInput) {
-                                              handleTagUpdate(p.internal_id, 'top', 'add', newTagInput);
-                                              setAddingTag(null);
-                                              setNewTagInput('');
-                                            }
-                                          }}
-                                          className="text-[0.7rem] px-2 py-1 rounded-lg border-2 border-indigo-200 outline-none w-24"
-                                          placeholder="..."
-                                        />
-                                      ) : (
-                                        <button onClick={() => { setAddingTag({ product_id: p.internal_id, category: 'top' }); setNewTagInput(''); }} className="text-indigo-300 hover:text-indigo-600 transition-colors"><Plus size={16} /></button>
-                                      )}
-                                    </div>
-                                    <div className="flex flex-wrap gap-2">
-                                      {p.tags_categorized?.top?.map((tag, idx) => (
-                                        <span key={idx} className="group relative inline-flex items-center gap-2 text-[0.7rem] font-black px-3 py-1.5 rounded-xl bg-white border border-indigo-100 text-indigo-700 shadow-sm transition-all hover:border-indigo-300">
-                                          {tag}
-                                          <button onClick={() => handleTagUpdate(p.internal_id, 'top', 'remove', tag)} className="opacity-0 group-hover:opacity-100 text-indigo-400 hover:text-rose-500 transition-all"><X size={14} /></button>
-                                        </span>
-                                      ))}
-                                    </div>
-                                  </div>
-
-                                  <div>
-                                    <div className="flex items-center gap-3 mb-4">
-                                      <span className="text-[0.65rem] font-black text-amber-600 uppercase tracking-[0.15em] bg-amber-50 px-3 py-1 rounded-lg flex items-center gap-1.5"><Flame size={12} /> Bestseller</span>
-                                      {addingTag?.product_id === p.internal_id && addingTag?.category === 'bestseller' ? (
-                                        <input
-                                          autoFocus
-                                          value={newTagInput}
-                                          onChange={(e) => setNewTagInput(e.target.value)}
-                                          onKeyDown={(e) => {
-                                            if (e.key === 'Enter' && newTagInput) {
-                                              handleTagUpdate(p.internal_id, 'bestseller', 'add', newTagInput);
-                                              setAddingTag(null);
-                                              setNewTagInput('');
-                                            }
-                                          }}
-                                          className="text-[0.7rem] px-2 py-1 rounded-lg border-2 border-amber-200 outline-none w-24"
-                                          placeholder="..."
-                                        />
-                                      ) : (
-                                        <button onClick={() => { setAddingTag({ product_id: p.internal_id, category: 'bestseller' }); setNewTagInput(''); }} className="text-amber-300 hover:text-amber-600 transition-colors"><Plus size={16} /></button>
-                                      )}
-                                    </div>
-                                    <div className="flex flex-wrap gap-2">
-                                      {p.tags_categorized?.bestseller?.map((tag, idx) => (
-                                        <span key={idx} className="group relative inline-flex items-center gap-2 text-[0.7rem] font-black px-3 py-1.5 rounded-xl bg-white border border-amber-100 text-amber-700 shadow-sm transition-all hover:border-amber-300">
-                                          {tag}
-                                          <button onClick={() => handleTagUpdate(p.internal_id, 'bestseller', 'remove', tag)} className="opacity-0 group-hover:opacity-100 text-amber-400 hover:text-rose-500 transition-all"><X size={14} /></button>
-                                        </span>
-                                      ))}
-                                    </div>
-                                  </div>
-
-                                  <div>
-                                    <div className="text-[0.65rem] font-black text-rose-500 uppercase tracking-[0.15em] bg-rose-50 px-3 py-1 rounded-lg w-fit mb-4">Special Tags</div>
-                                    <div className="flex flex-wrap gap-2">
-                                      {["No PROM", "No Formal", "Discontinued", "Push PROM"].map(tag => {
-                                        const isActive = p.tags_categorized?.special?.includes(tag);
-                                        return (
-                                          <button
-                                            key={tag}
-                                            onClick={() => handleTagUpdate(p.internal_id, 'special', isActive ? 'remove' : 'add', tag)}
-                                            className={`text-[0.65rem] font-black px-3 py-1.5 rounded-xl border-2 transition-all ${isActive ? 'bg-rose-600 border-rose-600 text-white shadow-lg shadow-rose-200' : 'bg-white border-slate-100 text-slate-400 hover:border-rose-200 hover:text-rose-600'}`}
-                                          >
-                                            {tag}
-                                          </button>
-                                        );
-                                      })}
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-
-                              <div className="flex flex-wrap gap-4 mb-6 items-stretch">
-                                <div className="bg-emerald-50/40 border border-emerald-100 p-4 rounded-[1.2rem] flex flex-col justify-center min-w-[140px] hover:shadow-md transition-all">
-                                  <div className="text-[0.55rem] font-black text-emerald-600/60 uppercase tracking-[0.1em] mb-1.5 flex items-center gap-1.5">
-                                    <div className="w-1 h-1 bg-emerald-400 rounded-full"></div>
-                                    PRICE ({activeStoreKey})
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-xl font-black text-emerald-700">${displayPrice}</span>
-                                    {p.sync_status?.price && <span className="text-[0.5rem] font-black bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-md uppercase border border-emerald-200">Staged</span>}
-                                  </div>
-                                </div>
-
-                                <div className="bg-rose-50/40 border border-rose-100 p-4 rounded-[1.2rem] flex flex-col justify-center min-w-[140px] hover:shadow-md transition-all">
-                                  <div className="text-[0.55rem] font-black text-rose-600/60 uppercase tracking-[0.1em] mb-1.5 flex items-center gap-1.5">
-                                    <div className="w-1 h-1 bg-rose-400 rounded-full"></div>
-                                    TOTAL STOCK ({activeStoreKey})
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-xl font-black text-rose-700">{displayTotalStock} Units</span>
-                                  </div>
-                                </div>
-
-                                <div className="flex-1 bg-slate-50/30 border border-slate-100 p-4 rounded-[1.2rem] min-w-[280px]">
-                                  <div className="text-[0.55rem] font-black text-slate-400 uppercase tracking-[0.1em] mb-3">AVAILABLE COLORS</div>
-                                  <div className="flex flex-wrap gap-2">
-                                    {colors.map(color => {
-                                      const hasInv = colorMetrics[color].inv > 0;
-                                      const isActive = activeColor === color;
-
-                                      return (
-                                        <button
-                                          key={color}
-                                          onClick={() => setSelectedColors(prev => ({ ...prev, [p.internal_id]: color }))}
-                                          className={`px-3 py-1.5 rounded-lg text-[0.7rem] font-black transition-all shadow-sm border flex items-center gap-2.5 
-                                            ${isActive
-                                              ? 'bg-indigo-600 text-white border-indigo-600 ring-2 ring-indigo-200'
-                                              : hasInv
-                                                ? 'bg-pink-50 text-pink-600 border-pink-100 hover:border-pink-300'
-                                                : 'bg-white text-slate-600 border-slate-100 hover:border-slate-300'}`}
-                                        >
-                                          <span className="uppercase tracking-tight">{color}</span>
-                                          <div className={`flex items-center gap-2 border-l pl-2 ${isActive ? 'border-white/20' : hasInv ? 'border-pink-200' : 'border-slate-100'}`}>
-                                            <span className={`text-[0.6rem] ${isActive ? 'text-indigo-200' : 'text-slate-400'}`}>{colorMetrics[color].inv}</span>
-                                            <span className={`text-[0.6rem] font-black ${isActive ? 'text-white' : hasInv ? 'text-pink-600' : 'text-amber-500'}`}>{colorMetrics[color].sold}</span>
-                                          </div>
-                                        </button>
-                                      );
-                                    })}
-                                  </div>
-                                </div>
-                              </div>
-
-                              {/* SIZES DISTRIBUTION - WITH TIMEFRAME */}
-                              <div>
-                                <div className="flex items-center justify-between mb-4">
-                                  <div className="text-[0.65rem] font-black text-slate-800 uppercase tracking-[0.15em]">Inventory & Sales Breakdown</div>
-                                  <div className="flex gap-1.5">
-                                    {['30', '60', '90'].map(range => (
-                                      <button
-                                        key={range}
-                                        onClick={() => setBreakdownTimeRanges(prev => ({ ...prev, [p.internal_id]: range }))}
-                                        className={`px-2.5 py-1 rounded-lg text-[0.6rem] font-black transition-all border ${breakdownRange === range ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-400 border-slate-200 hover:border-slate-300'}`}
-                                      >
-                                        {range}D
-                                      </button>
-                                    ))}
-                                  </div>
-                                </div>
-                                <div className="overflow-x-auto pb-2 custom-scrollbar">
-                                  <div className="inline-flex border border-slate-200 rounded-[1rem] overflow-hidden shadow-md" style={{ transform: 'translateZ(0)' }}>
-                                    {activeVariants.map((v, idx) => (
-                                      <div key={idx} className="flex flex-col min-w-[85px] border-r border-slate-100 last:border-0" style={{ transform: 'translateZ(0)' }}>
-                                        <div className="p-3 text-center text-[0.6rem] font-black uppercase border-b border-slate-100 bg-slate-50 text-slate-400">{v.size}</div>
-                                        <div className="bg-white p-4 flex items-center justify-center border-b border-slate-50">
-                                          <span className="text-xl font-black text-slate-900">{v.inventory}</span>
-                                        </div>
-                                        <div className="bg-amber-50/20 p-3 text-center">
-                                          <span className="text-lg font-black text-amber-700">
-                                            {(() => {
-                                              const vKey = `${activeColor?.toString().toLowerCase()}-${v.size?.toString().toLowerCase()}`;
-                                              if (breakdownRange === '30') return p.units_sold_30_by_variant?.[vKey] || 0;
-                                              if (breakdownRange === '60') return p.units_sold_60_by_variant?.[vKey] || 0;
-                                              return p.units_sold_by_variant?.[vKey] || 0;
-                                            })()}
-                                          </span>
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                                {p.admin_link && (
-                                  <div className="mt-4 flex justify-start">
-                                    <a
-                                      href={p.admin_link}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="inline-flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl text-[0.7rem] font-black hover:bg-slate-800 transition-all shadow-md shadow-slate-200 uppercase tracking-wider"
-                                    >
-                                      <ArrowUpRight size={14} />
-                                      Shopify Admin
-                                    </a>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  }
-
-                  return (
-                    <tr className="bg-slate-50">
-                      <td colSpan={isMerchMode ? 7 : 5} className="p-6">
-                        <div className="bg-white rounded-xl border border-slate-200 p-5 grid gap-6 shadow-sm" style={{ gridTemplateColumns: '230px 1fr' }}>
-                          {/* Left: image */}
-                          <div className="text-center border-r border-slate-100 pr-8">
-                            <div className="rounded-xl shadow-sm overflow-hidden bg-slate-100 aspect-[2/3] border border-slate-200">
-                              <img
-                                src={p.main_image}
-                                alt="expanded"
-                                loading="lazy"
-                                className="w-full transition-opacity duration-500 opacity-0"
-                                onLoad={(e) => e.target.classList.remove('opacity-0')}
-                              />
-                            </div>
-                            <div className="mt-4 flex justify-center gap-2.5">
-                              <span className="text-[0.65rem] font-extrabold bg-slate-100 text-slate-600 px-2.5 py-1.5 rounded-xl">{p.image_count} IMAGES</span>
-                              <span className="text-[0.65rem] font-extrabold bg-green-50 text-green-700 px-2.5 py-1.5 rounded-xl">{p.image_width}x{p.image_height}</span>
-                            </div>
-                            <div className="mt-4">
-                              {p.vendor === 'The Dress Outlet' && !isMerchMode && (
-                                <button
-                                  onClick={() => { setSelectedProduct({ ...p, isAnalytics: true }) }}
-                                  className="w-full bg-indigo-600 text-white border-none py-3 rounded-xl text-[0.85rem] font-extrabold cursor-pointer shadow-[0_4px_10px_rgba(79,70,229,0.25)] hover:bg-indigo-700 transition-all flex items-center justify-center gap-2"
-                                >
-                                  <TrendingUp size={16} /> Analytics Hub
-                                </button>
-                              )}
-                              <button
-                                onClick={() => {
-                                  setSelectedProduct(p)
-                                  setProposedFixes({ title: p.local_title || null, description: p.local_description || null, meta_title: p.local_meta_title || null, meta_description: p.local_meta_description || null })
-                                  setActiveIssue(null)
-                                }}
-                                className="mt-3 w-full bg-white border border-slate-200 py-3 rounded-xl text-[0.85rem] font-extrabold text-brand cursor-pointer transition-all hover:border-brand hover:shadow-md"
-                              >
-                                Notes Hub
-                              </button>
-                            </div>
-                          </div>
-
-                          {/* Right: details */}
-                          <div className="min-w-0">
-                            {/* STORE SWITCHER */}
-                            <div className="mb-5 bg-slate-50 p-2 rounded-xl flex flex-wrap items-center justify-between gap-3 border border-slate-200">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                {STORE_KEYS.map(sKey => {
-                                  const storeObj = p.store_prices?.[sKey];
-                                  if (!storeObj?.linked) return null;
-                                  const isActive = activeStoreKey === sKey;
-                                  return (
-                                    <button
-                                      key={sKey}
-                                      onClick={() => setActiveStoreTabs(prev => ({ ...prev, [p.internal_id]: sKey }))}
-                                      className={`px-5 py-2.5 rounded-xl text-[0.8rem] font-black transition-all flex items-center gap-2.5 cursor-pointer ${isActive
-                                        ? 'bg-slate-900 text-white shadow-lg shadow-slate-900/20 ring-2 ring-slate-900/10'
-                                        : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200/80 shadow-sm'
-                                        }`}
-                                    >
-                                      <span>{STORE_LABELS[sKey]}</span>
-                                      <span className={`text-[0.6rem] px-2 py-0.5 rounded-md font-extrabold uppercase tracking-wider ${storeObj.status === 'ACTIVE' ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-600 border border-amber-500/20'
-                                        }`}>
-                                        {storeObj.status}
-                                      </span>
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                              {activeAdminLink && (
-                                <a
-                                  href={activeAdminLink}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[0.75rem] font-black transition-all shadow-md shadow-indigo-600/20 flex items-center gap-2 no-underline tracking-wide"
-                                >
-                                  <span>Open in Shopify</span>
-                                  <ArrowUpRight size={14} />
-                                </a>
-                              )}
-                            </div>
-
-                            <div className="flex items-center gap-4 mb-4">
-                              <h3 className="m-0 text-[1.4rem] font-black text-slate-900 tracking-tight">{p.sku}</h3>
-                              {getStatusBadge(p.shopify_status)}
-                            </div>
-                            <div className="text-[0.85rem] text-slate-500 font-semibold">{p.title}</div>
-
-
-                            {/* Store-specific price and inventory */}
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 mt-4">
-                              <div className="bg-white p-4 rounded-xl border border-slate-200 relative">
-                                <div className="text-[0.65rem] font-extrabold text-green-800 tracking-wider mb-2 uppercase flex justify-between">
-                                  PRICE ({activeStoreKey})
-                                </div>
-                                {p.sync_status?.[activeSyncKey] && <div className="absolute top-2 right-2 w-2 h-2 bg-amber-400 rounded-full shadow-[0_0_0_2px_white]" title="Sync Required" />}
-                                <div className="flex items-center gap-2.5">
-                                  {editingPrice?.id === p.internal_id && editingPrice?.field === activePriceField ? (
-                                    <>
-                                      <input type="number" value={editingPrice.value} onChange={(e) => setEditingPrice({ ...editingPrice, value: e.target.value })} className="w-[130px] text-base font-extrabold border-2 border-emerald-500 rounded-lg px-2.5 py-1.5 outline-none" />
-                                      <Check size={20} color="#10b981" onClick={savePrice} className="cursor-pointer" />
-                                    </>
-                                  ) : (
-                                    <>
-                                      <span className="text-[1.2rem] font-black text-emerald-700">{displayPrice != null ? `$${displayPrice}` : 'Not synced'}</span>
-                                      <Pencil size={16} color="#94a3b8" onClick={() => setEditingPrice({ id: p.internal_id, sku: p.sku, field: activePriceField, store_key: activeStoreKey, value: displayPrice ?? '', product_id: p.product_id, tdo_id: p.tdo_product_id, wdo_id: p.wdo_product_id, kos_id: p.kos_product_id, im_id: p.im_product_id })} className="cursor-pointer" />
-                                      {activePriceField === 'retail' && p.backup_retail_price && p.backup_retail_price !== p.retail_price && <RotateCcw size={14} color="#e11d48" onClick={() => handleRevert('price', p)} className="cursor-pointer" title="Revert Price Only" />}
-                                    </>
-                                  )}
-                                </div>
-                              </div>
-
-                              <div className="bg-white p-4 rounded-xl border border-slate-200 relative">
-                                <div className="text-[0.65rem] font-extrabold text-red-800 tracking-wider mb-2 uppercase flex justify-between items-center">
-                                  TOTAL STOCK ({activeStoreKey})
-                                  {p.backup_sizes && p.backup_sizes !== p.staged_sizes && <RotateCcw size={14} color="#e11d48" onClick={() => handleRevert('inventory', p)} className="cursor-pointer" title="Revert Inventory Only" />}
-                                </div>
-                                {p.is_dirty_inventory && <div className="absolute top-2 right-2 w-2 h-2 bg-amber-400 rounded-full shadow-[0_0_0_2px_white]" title="Sync Required" />}
-                                <div className="text-[1.2rem] font-black text-rose-700">{displayTotalStock} Units</div>
-                              </div>
-
-                              <div className="bg-white p-4 rounded-xl border border-slate-200">
-                                <div className="text-[0.65rem] font-extrabold text-slate-600 tracking-wider mb-2 uppercase">STORE PRODUCT</div>
-                                <div className="text-[1.2rem] font-black text-slate-900">{activeStore.product_id || 'Missing'}</div>
-                              </div>
-                            </div>
-
-                            {/* AVAILABLE COLORS */}
-                            {activeColorVars && Object.keys(activeColorVars).length > 0 && (
-                              <div className="mb-4">
-                                <div className="text-[0.65rem] font-extrabold text-slate-600 tracking-wider mb-2 uppercase">AVAILABLE COLORS ({activeStoreKey})</div>
-                                <div className="flex gap-2 flex-wrap">
-                                  {Object.keys(activeColorVars).map(c => (
-                                    <button
-                                      key={c}
-                                      onClick={() => setSelectedColors({ ...selectedColors, [p.internal_id]: c })}
-                                      className={`px-3 py-1.5 rounded-lg text-[0.75rem] font-bold border transition-all ${activeColor === c ? 'bg-brand text-white border-brand' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'}`}
-                                    >
-                                      {c} <span className="opacity-75">{activeColorTotals?.[c] || 0}</span>
-                                    </button>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-
-                            {/* Size Grid Header with Timeframe Filter */}
-                            <div className="flex items-center justify-between mb-3 px-1">
-                              <div className="text-[0.65rem] font-extrabold text-slate-600 tracking-wider uppercase">Inventory & Sales Breakdown</div>
-                              <div className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200 shadow-sm transition-all hover:bg-white hover:border-brand">
-                                <TrendingUp size={14} className="text-brand" />
-                                <select
-                                  value={p.localTimeframe || activeTimeframe}
-                                  onChange={(e) => {
-                                    const val = e.target.value;
-                                    handleTimeframeChange(p.sku, val, p.internal_id);
-                                    setActiveTimeframe(val); // Update global as well for consistency
-                                  }}
-                                  className="bg-transparent border-none text-[0.75rem] font-black outline-none cursor-pointer appearance-none text-slate-900 pr-4"
-                                >
-                                  <option value="7">7 Days</option>
-                                  <option value="30">30 Days</option>
-                                  <option value="60">60 Days</option>
-                                  <option value="90">90 Days</option>
-                                </select>
-                                <ChevronDown size={12} className="text-slate-400 -ml-4 pointer-events-none" />
-                              </div>
-                            </div>
-
-                            {/* Size Grid */}
-                            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden mb-8 shadow-sm">
-                              <div className="overflow-x-auto flex">
-                                {activeVariants.length === 0 && (
-                                  <div className="w-full p-6 text-center text-sm font-bold text-slate-400">
-                                    No size-level inventory synced for {activeStoreKey}.
-                                  </div>
-                                )}
-                                {activeVariants.map(v => (
-                                  <div key={v.size} className="w-[90px] shrink-0 border-r border-slate-200 flex flex-col relative">
-                                    <div className="bg-slate-50 py-2.5 text-[0.75rem] font-black text-center border-b border-slate-200 text-slate-500 uppercase">{v.size}</div>
-                                    <div className="p-3.5 text-center flex flex-col items-center justify-center border-b border-slate-100 h-[65px]">
-                                      <span className="text-base font-extrabold text-slate-900">{v.inventory}</span>
-                                    </div>
-                                    <div className="bg-amber-50/50 py-3 text-[0.7rem] font-bold text-center text-amber-800">
-                                      {(() => {
-                                        const timeframe = p.localTimeframe || activeTimeframe;
-                                        if (p.sales_breakdown?.[activeColor]?.[v.size]) {
-                                          return p.sales_breakdown[activeColor][v.size];
-                                        }
-                                        const vKey = `${activeColor?.toString().toLowerCase()}-${v.size?.toString().toLowerCase()}`;
-                                        if (timeframe === '7' && p.units_sold_7_by_variant?.[vKey] !== undefined) return p.units_sold_7_by_variant[vKey];
-                                        if (timeframe === '30' && p.units_sold_30_by_variant?.[vKey] !== undefined) return p.units_sold_30_by_variant[vKey];
-                                        if (timeframe === '60' && p.units_sold_60_by_variant?.[vKey] !== undefined) return p.units_sold_60_by_variant[vKey];
-                                        if (timeframe === '90' && p.units_sold_by_variant?.[vKey] !== undefined) return p.units_sold_by_variant[vKey];
-
-                                        const variants = p.variants_merch || p.variants || [];
-                                        const vMatch = variants.find(vm => vm.size === v.size && (!activeColor || activeColor === "Default" || vm.color === activeColor));
-                                        if (vMatch) {
-                                          if (timeframe === '7') return vMatch.sold_7 || 0;
-                                          if (timeframe === '30') return vMatch.sold_30 || 0;
-                                          if (timeframe === '60') return vMatch.sold_60 || 0;
-                                          return vMatch.sold_90 || 0;
-                                        }
-                                        return 0;
-                                      })()}
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-
-                            {/* TDO Analytics */}
-                            {p.vendor === 'The Dress Outlet' && !isMerchMode && (
-                              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8 mt-6 border-t border-slate-100 pt-8">
-                                <div className="bg-indigo-50 p-5 rounded-[18px] border border-indigo-200 flex items-center gap-4">
-                                  <div className="bg-indigo-500 text-white p-2.5 rounded-xl"><Eye size={22} /></div>
-                                  <div>
-                                    <div className="text-[0.65rem] font-extrabold text-indigo-700 uppercase tracking-wider">{(p.localTimeframe || activeTimeframe)}D Pageviews</div>
-                                    <div className="text-[1.25rem] font-black text-indigo-900">
-                                      {(() => {
-                                        const views = p.pageviews_details || p.pageviews;
-                                        if (views && typeof views === 'object') {
-                                          const tf = p.localTimeframe || activeTimeframe;
-                                          const val = tf === '7' ? views.days_7 : tf === '30' ? views.days_30 : tf === '60' ? views.days_60 : views.days_90;
-                                          return (val || 0).toLocaleString();
-                                        }
-                                        return (p.pageviews || 0).toLocaleString();
-                                      })()}
-                                    </div>
-                                  </div>
-                                </div>
-                                <div className="bg-violet-50 p-5 rounded-[18px] border border-violet-200 flex items-center gap-4">
-                                  <div className="bg-violet-500 text-white p-2.5 rounded-xl"><TrendingUp size={22} /></div>
-                                  <div>
-                                    <div className="text-[0.65rem] font-extrabold text-violet-700 uppercase tracking-wider">Sell Thru / Sold</div>
-                                    <div className="text-[1.25rem] font-black text-violet-900">
-                                      {(() => {
-                                        const st = p.sell_thru_details || p.sell_thru;
-                                        const totalSold = typeof p.sell_thru === 'string' ? parseFloat(p.sell_thru) : p.sell_thru;
-                                        if (st && typeof st === 'object') {
-                                          const tf = p.localTimeframe || activeTimeframe;
-                                          const val = tf === '7' ? st.days_7 : tf === '30' ? st.days_30 : tf === '60' ? st.days_60 : st.days_90;
-                                          return (val || 0).toLocaleString();
-                                        }
-                                        return (totalSold || 0).toLocaleString();
-                                      })()}
-                                    </div>
-                                  </div>
-                                </div>
-                                {p.most_sold_color && p.most_sold_color !== 'N/A' && (
-                                  <div className="bg-amber-50 p-5 rounded-[18px] border border-amber-200 flex items-center gap-4 min-w-[160px]">
-                                    <div className="bg-amber-500 text-white p-2.5 rounded-xl"><Palette size={22} /></div>
-                                    <div className="min-w-0">
-                                      <div className="text-[0.65rem] font-extrabold text-amber-700 uppercase tracking-wider">Best Color</div>
-                                      <div className="text-[1.05rem] font-black text-amber-900 whitespace-nowrap overflow-visible">{p.most_sold_color}</div>
-                                    </div>
-                                  </div>
-                                )}
-                                {p.most_sold_size && p.most_sold_size !== 'N/A' && (
-                                  <div className="bg-emerald-50 p-5 rounded-[18px] border border-emerald-200 flex items-center gap-4 min-w-[160px]">
-                                    <div className="bg-emerald-500 text-white p-2.5 rounded-xl"><Maximize size={22} /></div>
-                                    <div className="min-w-0">
-                                      <div className="text-[0.65rem] font-extrabold text-emerald-700 uppercase tracking-wider">Best Size</div>
-                                      <div className="text-[1.15rem] font-black text-emerald-900 whitespace-nowrap overflow-visible">{p.most_sold_size}</div>
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-
-                            {/* Revert actions */}
-                            <div className="flex gap-4 flex-wrap">
-                              {p.has_backup && !Object.values(p.sync_status || {}).some(v => v === true) && (p.tdo_product_id || p.wdo_product_id || p.kos_product_id) && (
-                                <button onClick={() => handleRevert('all', p)} className="bg-red-50 text-red-600 border border-red-200 px-[18px] py-2.5 rounded-xl text-[0.85rem] font-extrabold cursor-pointer flex items-center gap-2.5 hover:bg-red-100 transition-all">
-                                  <RotateCcw size={16} /> Undo Push (Revert)
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })()}
-              </Fragment>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {loading ? (
+        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm p-32 text-center">
+          <div className="flex flex-col items-center gap-4">
+            <RefreshCw className="animate-spin text-brand" size={40} />
+            <div className="text-slate-400 font-extrabold text-sm uppercase tracking-widest">Updating Catalog View...</div>
+          </div>
+        </div>
+      ) : isUnifiedMode ? (
+        <UnifiedCatalogTable
+          currentItems={currentItems}
+          drawerProductId={drawerProductId}
+          setDrawerProductId={setDrawerProductId}
+          STORE_KEYS={STORE_KEYS}
+          getStatusBadge={getStatusBadge}
+          datePreset={datePreset}
+          customDateFrom={customDateFrom}
+          customDateTo={customDateTo}
+        />
+      ) : (
+        <MerchAnalyticsGrid
+          currentItems={currentItems}
+          drawerProductId={drawerProductId}
+          setDrawerProductId={setDrawerProductId}
+          getStatusBadge={getStatusBadge}
+          pushingStyle={pushingStyle}
+          pushToShopifyMerch={pushToShopifyMerch}
+          datePreset={datePreset}
+          customDateFrom={customDateFrom}
+          customDateTo={customDateTo}
+        />
+      )}
 
       {/* Pagination Controls */}
       {totalPages > 1 && (
@@ -1531,6 +1079,33 @@ const MerchandisingReport = ({ globalStats, initialMode }) => {
           </div>
         </div>
       )}
+
+      <ProductWorkspaceModal
+        drawerProductId={drawerProductId}
+        setDrawerProductId={setDrawerProductId}
+        currentItems={currentItems}
+        isMerchMode={isMerchMode}
+        selectedColors={selectedColors}
+        setSelectedColors={setSelectedColors}
+        addingTag={addingTag}
+        setAddingTag={setAddingTag}
+        newTagInput={newTagInput}
+        setNewTagInput={setNewTagInput}
+        breakdownTimeRanges={breakdownTimeRanges}
+        setBreakdownTimeRanges={setBreakdownTimeRanges}
+        activeStoreTabs={activeStoreTabs}
+        setActiveStoreTabs={setActiveStoreTabs}
+        editingPrice={editingPrice}
+        setEditingPrice={setEditingPrice}
+        pushingStyle={pushingStyle}
+        handleTagUpdate={handleTagUpdate}
+        pushToShopifyMerch={pushToShopifyMerch}
+        handleRevert={handleRevert}
+        setSelectedProduct={setSelectedProduct}
+        setProposedFixes={setProposedFixes}
+        setActiveIssue={setActiveIssue}
+        savePrice={savePrice}
+      />
 
       <AuditDetailsModal
         selectedProduct={selectedProduct}

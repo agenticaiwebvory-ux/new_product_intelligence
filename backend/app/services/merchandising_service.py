@@ -35,9 +35,10 @@ class MerchandisingService:
         time_range: str = "90",
         date_from: Optional[str] = None,
         date_to: Optional[str] = None,
+        styles: Optional[str] = None,
     ) -> Dict[str, Any]:
         start_time = time.time()
-        query = self._report_query(vendor=vendor, search=search, sort_by=sort_by, time_range=time_range, date_from=date_from, date_to=date_to)
+        query = self._report_query(vendor=vendor, search=search, sort_by=sort_by, time_range=time_range, date_from=date_from, date_to=date_to, styles=styles)
 
         total_count = query.count()
         results = query.offset((page - 1) * limit).limit(limit).all()
@@ -164,20 +165,20 @@ class MerchandisingService:
             shopify_product.tags = tag_string
         self.db.commit()
 
-    def _report_query(self, vendor: Optional[str], search: Optional[str], sort_by: Optional[str], time_range: str, date_from: Optional[str] = None, date_to: Optional[str] = None):
+    def _report_query(self, vendor: Optional[str], search: Optional[str], sort_by: Optional[str], time_range: str, date_from: Optional[str] = None, date_to: Optional[str] = None, styles: Optional[str] = None):
         query = (
             self.db.query(MerchProduct, MerchAnalytics, MerchShopifyProduct)
             .outerjoin(MerchAnalytics, MerchProduct.product_id == MerchAnalytics.product_id)
             .outerjoin(MerchShopifyProduct, MerchProduct.product_id == MerchShopifyProduct.product_id)
         )
         query = self._apply_exclusion_filters(query)
-        query = self._apply_common_filters(query, vendor=vendor, search=search, date_from=date_from, date_to=date_to)
+        query = self._apply_common_filters(query, vendor=vendor, search=search, date_from=date_from, date_to=date_to, styles=styles)
         return query.order_by(*self._order_by(sort_by=sort_by, search=search, time_range=time_range))
 
-    def _base_filtered_query(self, vendor: Optional[str], search: Optional[str], date_from: Optional[str] = None, date_to: Optional[str] = None):
+    def _base_filtered_query(self, vendor: Optional[str], search: Optional[str], date_from: Optional[str] = None, date_to: Optional[str] = None, styles: Optional[str] = None):
         query = self.db.query(MerchProduct).join(MerchShopifyProduct, MerchProduct.product_id == MerchShopifyProduct.product_id)
         query = self._apply_exclusion_filters(query)
-        return self._apply_common_filters(query, vendor=vendor, search=search, date_from=date_from, date_to=date_to)
+        return self._apply_common_filters(query, vendor=vendor, search=search, date_from=date_from, date_to=date_to, styles=styles)
 
     @staticmethod
     def _apply_exclusion_filters(query):
@@ -191,7 +192,7 @@ class MerchandisingService:
         )
 
     @staticmethod
-    def _apply_common_filters(query, vendor: Optional[str], search: Optional[str], date_from: Optional[str] = None, date_to: Optional[str] = None):
+    def _apply_common_filters(query, vendor: Optional[str], search: Optional[str], date_from: Optional[str] = None, date_to: Optional[str] = None, styles: Optional[str] = None):
         if vendor and vendor != "ALL":
             query = query.filter(MerchShopifyProduct.vendor == vendor)
         if search:
@@ -206,6 +207,10 @@ class MerchandisingService:
                     MerchShopifyProduct.tags.ilike(search_term),
                 )
             )
+        if styles:
+            style_list = [s.strip() for s in styles.split(',') if s.strip()]
+            if style_list:
+                query = query.filter(MerchProduct.style.in_(style_list))
         if date_from:
             query = query.filter(MerchShopifyProduct.published_at >= date_from)
         if date_to:

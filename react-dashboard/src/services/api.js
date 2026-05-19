@@ -159,7 +159,7 @@ export const apiService = {
   },
 
   // 4. Merchandising
-  async getMerchProducts({ page = 1, limit = 50, sortBy = null, vendor = null, search = null, timeRange = '90', dateFrom = null, dateTo = null }) {
+  async getMerchProducts({ page = 1, limit = 50, sortBy = null, vendor = null, search = null, timeRange = '90', dateFrom = null, dateTo = null, styles = null }) {
     const response = await mercApi.get('/merchandising/report', {
       params: {
         page,
@@ -169,7 +169,8 @@ export const apiService = {
         search: search || undefined,
         time_range: timeRange || '90',
         date_from: dateFrom || undefined,
-        date_to: dateTo || undefined
+        date_to: dateTo || undefined,
+        styles: styles || undefined
       }
     });
     return response.data;

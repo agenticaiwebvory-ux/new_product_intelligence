@@ -1,4 +1,6 @@
 import os
+import platform
+platform._wmi_query = lambda *a, **k: ("", "1", "", "", "")
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker

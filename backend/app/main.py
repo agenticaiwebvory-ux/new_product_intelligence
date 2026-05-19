@@ -11,6 +11,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# --- Windows WMI Hang Workaround ---
+import platform
+platform._wmi_query = lambda *a, **k: ("", "1", "", "", "")
+# -----------------------------------
+
 from .api import products, dashboard, auth, merchandising, stores
 from .core.database import Base, engine
 from .core.exceptions import AppBaseException

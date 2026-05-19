@@ -25,11 +25,22 @@ def parse_tags_categorized(tags_str: str) -> Dict[str, List[str]]:
 
         if any(s.lower() == tag_lower for s in SPECIAL_TAGS):
             result["special"].append(tag)
-        elif tag_lower.startswith(TOP_TAG_PREFIX.lower()):
-            # Strip prefix before storing so consumers get the clean value
-            result["top"].append(tag[len(TOP_TAG_PREFIX):].strip())
-        elif tag_lower.startswith(BESTSELLER_TAG_PREFIX.lower()):
-            result["bestseller"].append(tag[len(BESTSELLER_TAG_PREFIX):].strip())
+        elif tag_lower.startswith("top") and (
+            tag_lower.startswith(TOP_TAG_PREFIX.lower()) 
+            or (len(tag) > 3 and (tag[3].isupper() or tag[3] in (" ", ":")))
+        ):
+            prefix_len = 3
+            if len(tag) > 3 and tag[3] in (":", " "):
+                prefix_len = 4
+            result["top"].append(tag[prefix_len:].strip())
+        elif tag_lower.startswith("best") and (
+            tag_lower.startswith(BESTSELLER_TAG_PREFIX.lower())
+            or (len(tag) > 4 and (tag[4].isupper() or tag[4] in (" ", ":")))
+        ):
+            prefix_len = 4
+            if len(tag) > 4 and tag[4] in (":", " "):
+                prefix_len = 5
+            result["bestseller"].append(tag[prefix_len:].strip())
         else:
             result["others"].append(tag)
 

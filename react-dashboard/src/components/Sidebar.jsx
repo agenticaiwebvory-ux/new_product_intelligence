@@ -66,17 +66,7 @@ const Sidebar = ({ activeView, setActiveView, user, onLogout, sidebarLinks = [],
         </button>
 
 
-        {/* Product Changes / Updates — requirement doc: "Product Changes / Updates" */}
-        {canSeeDashboard && (
-          <button
-            onClick={() => setActiveView('changes')}
-            title="Product Changes / Updates"
-            className={`${navBtnBase} ${activeView === 'changes' ? navBtnActive : navBtnInactive} ${isCollapsed ? 'justify-center' : 'justify-start'}`}
-          >
-            <GitCommitHorizontal size={22} className="shrink-0" />
-            {!isCollapsed && <span>Changes</span>}
-          </button>
-        )}
+
 
         {/* Product Scraper */}
         <button

@@ -19,17 +19,18 @@ router = APIRouter()
 @router.get("/report", response_model=MerchandisingReportResponse)
 async def get_merchandising_report(
     page: int = Query(1, ge=1),
-    limit: int = Query(50, ge=1, le=200),
+    limit: int = Query(50, ge=1, le=20000),
     sort_by: str = Query(None),
     vendor: str = Query(None),
     search: str = Query(None),
     time_range: str = Query("90"),
     date_from: str = Query(None),
     date_to: str = Query(None),
+    styles: str = Query(None, description="Comma-separated list of styles to filter by"),
     db: Session = Depends(get_merch_db),
     response: Response = None,
 ):
-    cache_key = f"merch:report:{page}:{limit}:{sort_by}:{vendor}:{search}:{time_range}:{date_from}:{date_to}"
+    cache_key = f"merch:report:{page}:{limit}:{sort_by}:{vendor}:{search}:{time_range}:{date_from}:{date_to}:{styles}"
     cached = await get_cache(cache_key)
     if cached:
         if response:
@@ -37,7 +38,7 @@ async def get_merchandising_report(
         return cached
 
     service = MerchandisingService(db)
-    result = service.get_report(page=page, limit=limit, sort_by=sort_by, vendor=vendor, search=search, time_range=time_range, date_from=date_from, date_to=date_to)
+    result = service.get_report(page=page, limit=limit, sort_by=sort_by, vendor=vendor, search=search, time_range=time_range, date_from=date_from, date_to=date_to, styles=styles)
     await set_cache(cache_key, result, ttl=21600)
     if response:
         response.headers["X-Cache"] = "MISS"
