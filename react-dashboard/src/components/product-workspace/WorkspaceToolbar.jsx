@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { BarChart3, ChevronDown, Filter, Search, SlidersHorizontal } from 'lucide-react'
+import { ChevronDown, Filter, Search } from 'lucide-react'
 import { useAppSelector } from '../../app/hooks'
 
 export const DEFAULT_CATALOG_VENDOR = 'The Dress Outlet'
@@ -103,15 +103,10 @@ const VendorDropdown = ({ activeVendor, setActiveVendor, stats }) => {
 }
 
 const WorkspaceToolbar = ({
-  isMerchMode,
   setActiveVendor,
   activeVendor,
   activeStoreFilter,
   setActiveStoreFilter,
-  merchSort,
-  setMerchSort,
-  merchTimeframe,
-  setMerchTimeframe,
   stats,
   datePreset,
   setDatePreset,
@@ -127,47 +122,22 @@ const WorkspaceToolbar = ({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
           <ModeButton
-            active={!isMerchMode}
+            active={true}
             icon={Search}
             label="Catalog Health"
             description="Operations"
             onClick={() => setActiveVendor(DEFAULT_CATALOG_VENDOR)}
           />
-          <ModeButton
-            active={isMerchMode}
-            icon={BarChart3}
-            label="Merchandising"
-            description="Analytics"
-            onClick={() => setActiveVendor('TDO_MERCH')}
-          />
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {isMerchMode ? (
-            <>
-              <SelectControl value={merchSort} onChange={(e) => setMerchSort(e.target.value)} minWidth={165}>
-                <option value="newest">Sort: Newest</option>
-                <option value="high_views">High Page Views</option>
-                <option value="high_sold">High Units Sold</option>
-                <option value="high_returns">High Return Rate</option>
-              </SelectControl>
-              <SelectControl value={merchTimeframe} onChange={(e) => setMerchTimeframe(e.target.value)} minWidth={120}>
-                <option value="30">30 Days</option>
-                <option value="60">60 Days</option>
-                <option value="90">90 Days</option>
-              </SelectControl>
-            </>
-          ) : (
-            <>
-              <VendorDropdown activeVendor={activeVendor} setActiveVendor={setActiveVendor} stats={stats} />
-              <SelectControl value={activeStoreFilter} onChange={(e) => setActiveStoreFilter(e.target.value)} minWidth={145}>
-                <option value="ALL">All Stores</option>
-                {storeKeys.map((store) => (
-                  <option key={store} value={store.toUpperCase()}>{store.toUpperCase()} Store</option>
-                ))}
-              </SelectControl>
-            </>
-          )}
+          <VendorDropdown activeVendor={activeVendor} setActiveVendor={setActiveVendor} stats={stats} />
+          <SelectControl value={activeStoreFilter} onChange={(e) => setActiveStoreFilter(e.target.value)} minWidth={145}>
+            <option value="ALL">All Stores</option>
+            {storeKeys.map((store) => (
+              <option key={store} value={store.toUpperCase()}>{store.toUpperCase()} Store</option>
+            ))}
+          </SelectControl>
 
           <SelectControl value={datePreset} onChange={(e) => setDatePreset(e.target.value)} minWidth={140}>
             <option value="all">All Time</option>

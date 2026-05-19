@@ -1,32 +1,19 @@
 import { Eye, Layers, Package, ShieldCheck, Store, TrendingUp } from 'lucide-react'
 import { formatCompactNumber } from '../../utils/format'
 
-const KpiGrid = ({ isMerchMode, merchTimeframe, stats }) => {
+const KpiGrid = ({ stats }) => {
   const missingLinks =
     (stats?.kos_missing || 0) +
     (stats?.wdo_missing || 0) +
     (stats?.tdo_missing || 0) +
     (stats?.im_missing || 0)
 
-  const cards = isMerchMode
-    ? [
-        { icon: Layers, val: stats?.total?.toLocaleString(), lbl: 'Styles', color: '#0369a1', bg: '#f0f9ff' },
-        { icon: Package, val: stats?.total_units?.toLocaleString(), lbl: 'Units', color: '#166534', bg: '#f0fdf4' },
-        { icon: Eye, val: formatCompactNumber(stats?.total_pageviews), lbl: 'Views (90D)', color: '#4f46e5', bg: '#eef2ff' },
-        {
-          icon: TrendingUp,
-          val: formatCompactNumber(merchTimeframe === '30' ? stats?.total_sold_30 : merchTimeframe === '60' ? stats?.total_sold_60 : stats?.total_sold_90),
-          lbl: `Sold (${merchTimeframe}D)`,
-          color: '#a16207',
-          bg: '#fefce8',
-        },
-      ]
-    : [
-        { icon: Layers, val: stats?.total?.toLocaleString(), lbl: 'Styles', color: '#0369a1', bg: '#f0f9ff' },
-        { icon: Package, val: stats?.total_units?.toLocaleString(), lbl: 'Units', color: '#166534', bg: '#f0fdf4' },
-        { icon: ShieldCheck, val: stats?.out_of_stock?.toLocaleString(), lbl: 'Out of Stock', color: '#991b1b', bg: '#fef2f2' },
-        { icon: Store, val: missingLinks.toLocaleString(), lbl: 'Missing Store Links', color: '#7c3aed', bg: '#f5f3ff' },
-      ]
+  const cards = [
+    { icon: Layers, val: stats?.total?.toLocaleString(), lbl: 'Styles', color: '#0369a1', bg: '#f0f9ff' },
+    { icon: Package, val: stats?.total_units?.toLocaleString(), lbl: 'Units', color: '#166534', bg: '#f0fdf4' },
+    { icon: ShieldCheck, val: stats?.out_of_stock?.toLocaleString(), lbl: 'Out of Stock', color: '#991b1b', bg: '#fef2f2' },
+    { icon: Store, val: missingLinks.toLocaleString(), lbl: 'Missing Store Links', color: '#7c3aed', bg: '#f5f3ff' },
+  ]
 
   return (
     <div className="grid gap-3 mt-5 mb-5" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
