@@ -39,13 +39,12 @@ const ANALYTICS_FIELDS = [
   'sell_thru',
   'most_sold_color',
   'most_sold_size',
-  'retail_price',
-  'wholesale_price',
-  'store_prices',
-  'backup_retail_price',
-  'backup_wholesale_price',
-  'sync_status',
 ]
+
+const formatMoney = (value) => {
+  const number = typeof value === 'string' ? parseFloat(value) : value
+  return Number.isFinite(number) ? `$${number.toFixed(2)}` : '-'
+}
 
 const mergePreservedAnalytics = (nextProducts, previousProducts) =>
   nextProducts.map((newProduct) => {
@@ -384,30 +383,71 @@ const MerchandisingReport = ({ globalStats }) => {
     });
   };
 
-  const pushPriceToShopify = async (product) => {
+  const pushPriceToShopify = async (product, storeKey = 'TDO') => {
+    const normalizedStore = (storeKey || 'TDO').toUpperCase()
+    const isRetailStore = normalizedStore === 'TDO'
+    const targetPrice = (isRetailStore ? product.retail_price : product.wholesale_price) ?? product.store_prices?.[normalizedStore]?.price
     setConfirmationModal({
       title: 'Sync Price to Shopify',
-      message: `Do you want to push this price ($${product.retail_price}) on shopify?`,
+      message: `Push ${normalizedStore} price ${formatMoney(targetPrice)} for ${product.sku} to Shopify?`,
       confirmText: 'Push to Shopify',
       confirmClass: 'bg-emerald-600 hover:bg-emerald-700',
       onConfirm: async () => {
         setIsSyncingPrice(true);
         setPushingStyle(product.sku);
         try {
-          const linkedStores = product.stores?.split(',').map(s => s.trim()) || ['TDO']
-          console.log('[pushPriceToShopify] Submitting price push to Shopify API:', { sku: product.sku, stores: linkedStores, retail_price: product.retail_price, wholesale_price: product.wholesale_price });
+          const payload = { stores: [normalizedStore] }
+          if (product.retail_price !== null && product.retail_price !== undefined) {
+            payload.retail_price = product.retail_price
+          }
+          if (product.wholesale_price !== null && product.wholesale_price !== undefined) {
+            payload.wholesale_price = product.wholesale_price
+          }
+          if (isRetailStore && payload.retail_price === undefined) {
+            payload.retail_price = targetPrice
+          }
+          if (!isRetailStore && payload.wholesale_price === undefined) {
+            payload.wholesale_price = targetPrice
+          }
+          console.log('[pushPriceToShopify] Submitting price push to Shopify API:', { sku: product.sku, ...payload });
           
-          const res = await apiService.pushProductUpdate(product.sku, {
-            retail_price: product.retail_price,
-            wholesale_price: product.wholesale_price,
-            stores: linkedStores
-          }, false);
+          const res = await apiService.pushProductUpdate(product.sku, payload, false);
           
           console.log('[pushPriceToShopify] API push response:', res);
           
-          if (res.status === 'success' || res.status === 'partial_success') {
-            toast.success('Price pushed to Shopify!');
-            setProducts(prev => prev.map(p => p.sku === product.sku ? { ...p, sync_status: { ...(p.sync_status || {}), price: false, wholesale: false }, has_pushed_price: true } : p));
+if (res.status === 'success' || res.status === 'partial_success') {
+            toast.success(`${normalizedStore} price pushed to Shopify!`);
+            
+            const backupRetail = product.backup_retail_price;
+            const backupWholesale = product.backup_wholesale_price;
+            
+            // Update local state before fetchData so mergePreservedAnalytics has correct prev
+            setProducts(prev => prev.map(p => {
+              if (p.sku === product.sku) {
+                return {
+                  ...p,
+                  backup_retail_price: backupRetail,
+                  backup_wholesale_price: backupWholesale,
+                  sync_status: { ...(p.sync_status || {}), price: false, wholesale: false }
+                };
+              }
+              return p;
+            }));
+            
+            await fetchData(true);
+            
+            // Ensure backup values survive the merge (mergePreservedAnalytics may skip them)
+            setProducts(prev => prev.map(p => {
+              if (p.sku === product.sku) {
+                return {
+                  ...p,
+                  backup_retail_price: p.backup_retail_price ?? backupRetail,
+                  backup_wholesale_price: p.backup_wholesale_price ?? backupWholesale,
+                };
+              }
+              return p;
+            }));
+            
             setConfirmationModal(null);
           } else {
             const detailMsg = res.message || (res.details ? JSON.stringify(res.details) : 'Push failed');
@@ -470,20 +510,58 @@ const MerchandisingReport = ({ globalStats }) => {
   }
 
   const handleRevertPrice = async (product, storeKey = null) => {
+    const normalizedStore = (storeKey || 'TDO').toUpperCase()
+    const isRetailStore = normalizedStore === 'TDO'
+    const currentPrice = product.store_prices?.[normalizedStore]?.price ?? (isRetailStore ? product.retail_price : product.wholesale_price)
+    const restorePrice = isRetailStore ? product.backup_retail_price : product.backup_wholesale_price
+
+    if (restorePrice === null || restorePrice === undefined) {
+      toast.error(`No backup price found for ${normalizedStore}`)
+      return
+    }
+
     setConfirmationModal({
-      title: 'Revert Price Changes',
-      message: `Are you sure you want to revert the price for ${product.sku} to its last live version?`,
+      title: `Revert ${normalizedStore} Price`,
+      message: `Revert ${normalizedStore} price for ${product.sku} from ${formatMoney(currentPrice)} to ${formatMoney(restorePrice)}?`,
       confirmText: 'Revert Price',
       confirmClass: 'bg-rose-600 hover:bg-rose-700',
-      onConfirm: async () => {
+onConfirm: async () => {
         setIsReverting(true);
         try {
-          await apiService.revertUpdate(product.sku, 'price', storeKey);
-          toast.success('Price reverted!');
-          fetchData(true);
+          console.log('[handleRevertPrice] Calling revert API for', product.sku, normalizedStore, 'backup:', product.backup_retail_price);
+          const resp = await apiService.revertUpdate(product.sku, 'price', normalizedStore);
+          console.log('[handleRevertPrice] API response:', resp);
+          toast.success(`${normalizedStore} price reverted to ${formatMoney(restorePrice)}`);
+          
+          // Update local state to reflect the revert before fetchData runs,
+          // so mergePreservedAnalytics has the correct prev values
+          const backupRetail = product.backup_retail_price;
+          const backupWholesale = product.backup_wholesale_price;
+          setProducts(prev => prev.map(p => {
+            if (p.sku === product.sku) {
+              const nextStorePrices = p.store_prices?.[normalizedStore]
+                ? { ...p.store_prices, [normalizedStore]: { ...p.store_prices[normalizedStore], price: backupRetail } }
+                : p.store_prices;
+              return {
+                ...p,
+                retail_price: backupRetail ?? p.retail_price,
+                wholesale_price: backupWholesale ?? p.wholesale_price,
+                store_prices: nextStorePrices,
+                backup_retail_price: undefined,
+                backup_wholesale_price: undefined,
+                sync_status: { ...(p.sync_status || {}), price: false, wholesale: false }
+              };
+            }
+            return p;
+          }));
+          
+          console.log('[handleRevertPrice] Calling fetchData(true)...');
+          await fetchData(true);
+          console.log('[handleRevertPrice] fetchData completed');
           setConfirmationModal(null);
         } catch (err) {
-          toast.error('Revert failed');
+          console.error('[handleRevertPrice] Error:', err);
+          toast.error('Revert failed: ' + (err.response?.data?.detail || err.message));
         } finally {
           setIsReverting(false);
         }
@@ -513,8 +591,7 @@ const MerchandisingReport = ({ globalStats }) => {
       const payload = {}
       if (field === 'retail') payload.retail_price = newVal
       if (field === 'wholesale') payload.wholesale_price = newVal
-      const linkedStores = stores?.split(',').map(s => s.trim()) || ['TDO']
-      payload.stores = linkedStores
+      payload.stores = store_key ? [store_key] : (stores?.split(',').map(s => s.trim()) || ['TDO'])
       
       console.log('[savePrice] Submitting draft save to API:', { sku, payload });
       const res = await apiService.pushProductUpdate(sku, payload, true);

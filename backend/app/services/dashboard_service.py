@@ -537,6 +537,21 @@ class DashboardService:
             sales_60_nested, sales_60_flat = self._parse_variant_sales_map(p_analytics.get("60"), "60")
             sales_90_nested, sales_90_flat = self._parse_variant_sales_map(p_analytics.get("90"), "90")
             sales_7_nested, sales_7_flat = self._parse_variant_sales_map(p_analytics.get("7"), "7")
+            sibling_row = None
+            needs_backup_fallback = (
+                getattr(row, 'backup_retail_price', None) is None
+                or getattr(row, 'backup_wholesale_price', None) is None
+            )
+            if needs_backup_fallback:
+                row_table = getattr(row.__class__, "__tablename__", "")
+                sibling_model = models.InStockDashboard if row_table == "the_dress_outlet" else models.TheDressOutlet
+                sibling_row = self.db.query(sibling_model).filter(sibling_model.style == row.style).first()
+
+            def backup_value(field):
+                value = getattr(row, field, None)
+                if value is not None:
+                    return value
+                return getattr(sibling_row, field, None) if sibling_row else None
 
             results.append({
                 "internal_id": f"{table_prefix}_{row.id}",
@@ -563,11 +578,11 @@ class DashboardService:
                 "staged_price": final_retail,
                 "wholesale_price": final_wholesale,
                 "staged_sizes": row.sizes,
-                "backup_title": row.backup_title,
-                "backup_description": row.backup_description,
-                "backup_retail_price": getattr(row, 'backup_retail_price', None),
-                "backup_wholesale_price": getattr(row, 'backup_wholesale_price', None),
-                "backup_sizes": getattr(row, 'backup_sizes', None),
+                "backup_title": backup_value('backup_title'),
+                "backup_description": backup_value('backup_description'),
+                "backup_retail_price": backup_value('backup_retail_price'),
+                "backup_wholesale_price": backup_value('backup_wholesale_price'),
+                "backup_sizes": backup_value('backup_sizes'),
                 "sync_status": sync_status,
                 "im_status": getattr(row, 'im_status', None),
                 "im_admin_link": getattr(row, 'im_admin_link', None),
@@ -829,11 +844,11 @@ class DashboardService:
 
         def _backup_exists_filter(model):
             return or_(
-                model.backup_retail_price != getattr(model, "retail_price"),
-                model.backup_wholesale_price != getattr(model, "wholesale_price"),
-                model.backup_total_inventory != getattr(model, "total_inventory"),
-                model.backup_sizes != getattr(model, "sizes"),
-                model.backup_title != getattr(model, "local_title"),
+                (model.backup_retail_price.isnot(None) & (model.backup_retail_price != getattr(model, "retail_price"))),
+                (model.backup_wholesale_price.isnot(None) & (model.backup_wholesale_price != getattr(model, "wholesale_price"))),
+                (model.backup_total_inventory.isnot(None) & (model.backup_total_inventory != getattr(model, "total_inventory"))),
+                (model.backup_sizes.isnot(None) & (model.backup_sizes != getattr(model, "sizes"))),
+                (model.backup_title.isnot(None) & (model.backup_title != getattr(model, "local_title"))),
             )
 
         # Determine sort order
@@ -847,13 +862,11 @@ class DashboardService:
         # Query InStockDashboard where backup differs
         main_q = self.db.query(models.InStockDashboard).filter(
             _backup_exists_filter(models.InStockDashboard),
-            models.InStockDashboard.backup_retail_price.isnot(None),
         )
 
         # Query TheDressOutlet where backup differs
         tdo_q = self.db.query(models.TheDressOutlet).filter(
             _backup_exists_filter(models.TheDressOutlet),
-            models.TheDressOutlet.backup_retail_price.isnot(None),
         )
 
         # Apply search

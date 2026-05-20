@@ -5,8 +5,8 @@ import toast from 'react-hot-toast'
 
 const CHANGE_META = {
   title: { icon: FileText, label: 'Title', color: 'text-blue-600', bg: 'bg-blue-50', revertType: 'content' },
-  retail_price: { icon: DollarSign, label: 'Retail Price', color: 'text-emerald-600', bg: 'bg-emerald-50', revertType: 'price' },
-  wholesale_price: { icon: DollarSign, label: 'Wholesale Price', color: 'text-amber-600', bg: 'bg-amber-50', revertType: 'price' },
+  retail_price: { icon: DollarSign, label: 'Retail Price', color: 'text-emerald-600', bg: 'bg-emerald-50', revertType: 'price', store: 'TDO' },
+  wholesale_price: { icon: DollarSign, label: 'Wholesale Price', color: 'text-amber-600', bg: 'bg-amber-50', revertType: 'price', store: 'WDO' },
   sizes: { icon: Hash, label: 'Sizes', color: 'text-purple-600', bg: 'bg-purple-50', revertType: 'inventory' },
   total_inventory: { icon: Package, label: 'Total Inventory', color: 'text-cyan-600', bg: 'bg-cyan-50', revertType: 'inventory' },
 }
@@ -38,7 +38,7 @@ const ChangeRow = ({ change, field, before, after, sku, onRevert, reverting }) =
         </div>
       </div>
       <button
-        onClick={() => onRevert(sku, meta.revertType, field)}
+        onClick={() => onRevert(sku, meta.revertType, field, before, after)}
         disabled={isReverting}
         className="opacity-0 group-hover:opacity-100 shrink-0 mt-1 flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-200 bg-red-50 text-red-700 text-xs font-bold hover:bg-red-100 disabled:opacity-50 transition-all cursor-pointer"
       >
@@ -132,32 +132,36 @@ export default function ChangesPage() {
     }, 400)
   }
 
-  const handleRevertClick = (sku, type, field) => {
+  const handleRevertClick = (sku, type, field, before = null, after = null) => {
     const meta = CHANGE_META[field] || { label: 'this field' }
+    const storeText = meta.store ? ` (${meta.store})` : ''
+    const message = type === 'price' && before !== null
+      ? `Revert ${sku}${storeText} from ${String(after ?? '-')} back to ${String(before ?? '-')}?`
+      : `Are you sure you want to revert "${sku}" back to the previous ${meta.label.toLowerCase()}?`
     setConfirm({
       open: true,
       sku,
       type,
+      store: meta.store || null,
       field: field || 'all',
-      title: `Revert ${meta.label}?`,
-      message: `Are you sure you want to revert "${sku}" back to the previous ${meta.label.toLowerCase()}?`,
+      title: `Revert ${meta.label}${storeText}?`,
+      message,
     })
   }
 
   const handleRevertConfirm = async () => {
-    const { sku, type } = confirm
+    const { sku, type, store } = confirm
     setReverting((prev) => ({ ...prev, [sku]: { ...prev[sku], [type]: true } }))
     setConfirm((prev) => ({ ...prev, busy: true }))
     try {
-      await apiService.revertUpdate(sku, type)
+      await apiService.revertUpdate(sku, type, store)
       toast.success(`Reverted ${sku} successfully`)
-      setItems((prev) => prev.filter((item) => item.style !== sku))
-      setTotalCount((prev) => Math.max(0, prev - 1))
+      await fetchData(page, search, sortBy)
     } catch (e) {
       toast.error(e?.response?.data?.detail || e.message || 'Revert failed')
     } finally {
       setReverting((prev) => ({ ...prev, [sku]: { ...prev[sku], [type]: false } }))
-      setConfirm({ open: false, sku: null, type: 'all', field: '', busy: false })
+      setConfirm({ open: false, sku: null, type: 'all', store: null, field: '', busy: false })
       if (expandedStyle === sku) setExpandedStyle(null)
     }
   }
@@ -218,7 +222,7 @@ export default function ChangesPage() {
         title={confirm.title}
         message={confirm.message}
         onConfirm={handleRevertConfirm}
-        onCancel={() => setConfirm({ open: false, sku: null, type: 'all', field: '', busy: false })}
+        onCancel={() => setConfirm({ open: false, sku: null, type: 'all', store: null, field: '', busy: false })}
         busy={confirm.busy}
         confirmLabel="Confirm Revert"
       />

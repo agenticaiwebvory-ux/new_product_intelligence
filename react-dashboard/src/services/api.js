@@ -180,9 +180,9 @@ export const apiService = {
   },
 
   async revertUpdate(sku, type = 'all', store = null) {
-    const url = store 
-      ? `/products/revert/${sku}?type=${type}&store=${store}` 
-      : `/products/revert/${sku}?type=${type}`;
+    const params = new URLSearchParams({ type });
+    if (store) params.set('store', store);
+    const url = `/products/revert/${encodeURIComponent(sku)}?${params.toString()}`;
     const response = await api.post(url);
     return response.data;
   },

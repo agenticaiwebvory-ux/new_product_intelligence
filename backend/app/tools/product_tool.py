@@ -47,6 +47,26 @@ class ProductTool:
         
         # Primary row to update for sync logic
         target_row = dashboard_row or source_row
+
+        def mirror_backup_fields():
+            backup_fields = [
+                "backup_title",
+                "backup_description",
+                "backup_meta_title",
+                "backup_meta_description",
+                "backup_retail_price",
+                "backup_wholesale_price",
+                "backup_total_inventory",
+                "backup_sizes",
+                "backup_created_at",
+            ]
+            for row in [dashboard_row, source_row]:
+                if not row or row is target_row:
+                    continue
+                for field in backup_fields:
+                    source_value = getattr(target_row, field, None)
+                    if source_value is not None and getattr(row, field, None) is None:
+                        setattr(row, field, source_value)
         
         # 0. INITIAL SNAPSHOT (If no backup exists yet)
         if target_row.backup_title is None:
@@ -113,6 +133,23 @@ class ProductTool:
         self.db.commit()
 
         if local_only:
+            # Capture the pre-draft live prices before updating the local Product cache.
+            if create_backup:
+                tdo_pid = target_row.tdo_product_id
+                if tdo_pid and target_row.backup_retail_price is None:
+                    tdo_live = self.db.query(Product).get(tdo_pid)
+                    if tdo_live:
+                        target_row.backup_retail_price = tdo_live.price
+                wdo_pid = target_row.wdo_product_id
+                if wdo_pid and target_row.backup_wholesale_price is None:
+                    wdo_live = self.db.query(Product).get(wdo_pid)
+                    if wdo_live:
+                        target_row.backup_wholesale_price = wdo_live.price
+                target_row.backup_created_at = datetime.utcnow()
+                self.db.commit()
+                mirror_backup_fields()
+                self.db.commit()
+
             # Sync staged price to Product cache so get_unified_products returns correct store_prices
             if retail_price is not None or wholesale_price is not None:
                 for row in [dashboard_row, source_row]:
@@ -141,6 +178,8 @@ class ProductTool:
                         target_row.backup_wholesale_price = wdo_live.price
                 target_row.backup_created_at = datetime.utcnow()
                 self.db.commit()
+                mirror_backup_fields()
+                self.db.commit()
 
             return {
                 "status": "success",
@@ -158,7 +197,8 @@ class ProductTool:
                     if tdo_live:
                         target_row.backup_title = tdo_live.title
                         target_row.backup_description = tdo_live.body_html
-                        target_row.backup_retail_price = tdo_live.price
+                        if target_row.backup_retail_price is None:
+                            target_row.backup_retail_price = tdo_live.price
                         # Note: We only backup sizes if no backup exists yet to avoid overwriting original with staged
                         if target_row.backup_sizes is None:
                             target_row.backup_total_inventory = target_row.total_inventory
@@ -170,7 +210,8 @@ class ProductTool:
                 if wdo_pid:
                     wdo_live = self.db.query(Product).get(wdo_pid)
                     if wdo_live:
-                        target_row.backup_wholesale_price = wdo_live.price
+                        if target_row.backup_wholesale_price is None:
+                            target_row.backup_wholesale_price = wdo_live.price
                         if target_row.backup_meta_title is None:
                             target_row.backup_meta_title = wdo_live.seo_title or ""
                         if target_row.backup_meta_description is None:
@@ -185,6 +226,8 @@ class ProductTool:
                         if target_row.backup_meta_description is None:
                             target_row.backup_meta_description = tdo_live.seo_description or ""
                 
+                self.db.commit()
+                mirror_backup_fields()
                 self.db.commit()
             except Exception as e:
                 logger.error(f"Backup snapshot failed: {e}")
@@ -323,6 +366,10 @@ class ProductTool:
         """
         start_time = time.time()
         logger.info(f"revert_to_backup ({revert_type}) started for sku: {sku or dashboard_id}")
+        valid_stores = {"TDO", "WDO", "KOS", "IM"}
+        stores = [s.upper() for s in (stores or ["TDO", "WDO", "KOS", "IM"]) if s and s.upper() in valid_stores]
+        if not stores:
+            stores = ["TDO", "WDO", "KOS", "IM"]
         
         # 1. FIND THE ROW
         target_row = None
@@ -340,8 +387,22 @@ class ProductTool:
         if not target_row:
             raise ProductNotFoundError(sku or str(dashboard_id))
 
+        price_stores = [s for s in stores if getattr(target_row, f"{s.lower()}_product_id", None)]
+        restore_retail_price = revert_type in ["all", "price"] and "TDO" in price_stores
+        restore_wholesale_price = revert_type in ["all", "price"] and any(s != "TDO" for s in price_stores)
+
         # 2. VALIDATE BACKUP DATA
-        if target_row.backup_sizes is None and target_row.backup_retail_price is None:
+        if revert_type == "price":
+            missing = []
+            if restore_retail_price and target_row.backup_retail_price is None:
+                missing.append("retail")
+            if restore_wholesale_price and target_row.backup_wholesale_price is None:
+                missing.append("wholesale")
+            if missing:
+                raise AppBaseException(f"No backup {'/'.join(missing)} price found to revert to.", 400)
+            if not restore_retail_price and not restore_wholesale_price:
+                raise AppBaseException("No linked store price found to revert.", 400)
+        elif target_row.backup_sizes is None and target_row.backup_retail_price is None and target_row.backup_wholesale_price is None:
             raise AppBaseException("No backup data found to revert to.", 400)
 
         # 3. RESTORE LOCAL DRAFTS (Immediate DB update)
@@ -350,8 +411,10 @@ class ProductTool:
             if target_row.backup_description: target_row.local_description = target_row.backup_description
         
         if revert_type in ["all", "price"]:
-            if target_row.backup_retail_price: target_row.retail_price = target_row.backup_retail_price
-            if target_row.backup_wholesale_price: target_row.wholesale_price = target_row.backup_wholesale_price
+            if restore_retail_price:
+                target_row.retail_price = target_row.backup_retail_price
+            if restore_wholesale_price:
+                target_row.wholesale_price = target_row.backup_wholesale_price
         
         # Parse backup sizes "2(10), 14(5)" -> dict
         size_map = {}
@@ -382,12 +445,26 @@ class ProductTool:
                 skip_content=False # Restore title/desc too
             )
 
-        # High-speed Price & Inventory Batch Update
-        if revert_type in ["all", "price", "inventory"]:
+        # Price restore follows the same store-specific path as normal price sync.
+        if revert_type in ["all", "price"] and (restore_retail_price or restore_wholesale_price):
+            price_result = await self.update_content(
+                sku=sku,
+                dashboard_id=dashboard_id,
+                retail_price=target_row.backup_retail_price if restore_retail_price else None,
+                wholesale_price=target_row.backup_wholesale_price if restore_wholesale_price else None,
+                stores=stores,
+                local_only=False,
+                create_backup=False,
+                skip_content=True
+            )
+            if price_result and price_result.get("status") == "failed":
+                raise AppBaseException(price_result.get("message", "Price revert failed."), 502)
+
+        # High-speed Inventory Batch Update
+        if revert_type in ["all", "inventory"]:
             await inv_tool.update_product_batch(
                 sku=sku, dashboard_id=dashboard_id,
                 sizes_map=size_map if (revert_type in ["all", "inventory"] and size_map) else None,
-                price=target_row.retail_price if revert_type in ["all", "price"] else None,
                 stores=stores,
                 merge=False # Important: Replace instead of Merge for Reverts
             )
@@ -404,9 +481,21 @@ class ProductTool:
             target_row.backup_sizes = None
             target_row.backup_created_at = None
         elif revert_type == "price":
-            target_row.backup_retail_price = None
-            target_row.backup_wholesale_price = None
-            target_row.backup_created_at = None
+            if restore_retail_price:
+                target_row.backup_retail_price = None
+            if restore_wholesale_price:
+                target_row.backup_wholesale_price = None
+            if not any([
+                target_row.backup_title,
+                target_row.backup_description,
+                target_row.backup_meta_title,
+                target_row.backup_meta_description,
+                target_row.backup_retail_price is not None,
+                target_row.backup_wholesale_price is not None,
+                target_row.backup_total_inventory is not None,
+                target_row.backup_sizes is not None
+            ]):
+                target_row.backup_created_at = None
         elif revert_type == "inventory":
             target_row.backup_total_inventory = None
             target_row.backup_sizes = None

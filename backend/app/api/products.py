@@ -173,7 +173,7 @@ async def push_update_by_sku(
 
 @router.post("/revert/{sku}")
 async def revert_sync(sku: str, type: str = "all", store: str = None, db: Session = Depends(get_db)):
-    stores = [store.upper()] if store and store.upper() in ["TDO", "WDO", "KOS", "IM"] else None
+    stores = [store.upper()] if store and store.upper() in ["TDO", "WDO", "KOS", "IM"] else ["TDO", "WDO", "KOS", "IM"]
     prod_tool = ProductTool(db)
     res = await prod_tool.revert_to_backup(sku=sku, revert_type=type, stores=stores)
     try:

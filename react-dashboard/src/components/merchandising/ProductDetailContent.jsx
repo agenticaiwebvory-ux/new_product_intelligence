@@ -43,6 +43,8 @@ export default function ProductDetailContent({
   const activeAdminLink = p.admin_links?.[activeStoreKey.toLowerCase()]
   const activePriceField = activeStoreKey === 'TDO' ? 'retail' : 'wholesale'
   const activeSyncKey = activeStoreKey === 'TDO' ? 'price' : 'wholesale'
+  const activeBackupPrice = activeStoreKey === 'TDO' ? p.backup_retail_price : p.backup_wholesale_price
+  const canRevertActivePrice = activeBackupPrice !== null && activeBackupPrice !== undefined
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm space-y-4">
@@ -235,16 +237,29 @@ export default function ProductDetailContent({
             <div className="bg-white p-4 rounded-xl border border-slate-200 relative">
               <div className="text-[0.65rem] font-extrabold text-green-800 tracking-wider mb-2 uppercase flex justify-between items-center">
                 <span>PRICE ({activeStoreKey})</span>
-                {p.sync_status?.[activeSyncKey] && (
-                  <button
-                    onClick={() => pushPriceToShopify(p)}
-                    disabled={pushingStyle === p.sku}
-                    className="flex items-center gap-1.5 px-3 py-1 bg-emerald-600 text-white rounded-lg text-[0.65rem] font-black hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100 disabled:opacity-50 cursor-pointer"
-                  >
-                    {pushingStyle === p.sku ? <RefreshCw size={10} className="animate-spin" /> : <ArrowUpRight size={10} />}
-                    PUSH
-                  </button>
-                )}
+                <div className="flex items-center gap-1.5">
+                  {canRevertActivePrice && (
+                    <button
+                      onClick={() => handleRevertPrice(p, activeStoreKey)}
+                      disabled={pushingStyle === p.sku}
+                      className="flex items-center gap-1.5 px-3 py-1 bg-rose-50 border border-rose-200 text-rose-700 rounded-lg text-[0.65rem] font-black hover:bg-rose-100 transition-all disabled:opacity-50 cursor-pointer"
+                      title={`Revert to $${Number(activeBackupPrice).toFixed(2)}`}
+                    >
+                      <RotateCcw size={10} />
+                      REVERT
+                    </button>
+                  )}
+                  {p.sync_status?.[activeSyncKey] && (
+                    <button
+                      onClick={() => pushPriceToShopify(p, activeStoreKey)}
+                      disabled={pushingStyle === p.sku}
+                      className="flex items-center gap-1.5 px-3 py-1 bg-emerald-600 text-white rounded-lg text-[0.65rem] font-black hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100 disabled:opacity-50 cursor-pointer"
+                    >
+                      {pushingStyle === p.sku ? <RefreshCw size={10} className="animate-spin" /> : <ArrowUpRight size={10} />}
+                      PUSH
+                    </button>
+                  )}
+                </div>
               </div>
               {p.sync_status?.[activeSyncKey] && <div className="absolute top-2 right-2 w-2 h-2 bg-amber-400 rounded-full shadow-[0_0_0_2px_white]" title="Sync Required" />}
               <div className="flex items-center gap-2.5">
@@ -271,7 +286,6 @@ export default function ProductDetailContent({
                   <>
                     <span className="text-[1.2rem] font-black text-emerald-700">{displayPrice != null ? `$${displayPrice}` : 'Not synced'}</span>
                     <Pencil size={16} color="#475569" onClick={() => setEditingPrice({ id: p.internal_id, sku: p.sku, field: activePriceField, store_key: activeStoreKey, value: displayPrice ?? '', product_id: p.product_id, tdo_id: p.tdo_product_id, wdo_id: p.wdo_product_id, kos_id: p.kos_product_id, im_id: p.im_product_id, stores: p.stores })} className="cursor-pointer" />
-                    {(activePriceField === 'retail' ? (p.backup_retail_price && p.backup_retail_price !== p.retail_price) : (p.backup_wholesale_price && p.backup_wholesale_price !== p.wholesale_price)) && <RotateCcw size={14} color="#e11d48" onClick={() => handleRevertPrice(p, activeStoreKey)} className="cursor-pointer" title="Revert Price" />}
                   </>
                 )}
               </div>

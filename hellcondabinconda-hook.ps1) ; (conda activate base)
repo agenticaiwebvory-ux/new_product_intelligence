@@ -1,0 +1,18 @@
+[33m7603fe0[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mexperimentUI[m[33m)[m 9.price updated  working not revert
+[33mb9bf1ea[m 8.corrected the best size according to sold
+[33m2827a65[m 8.demo analytics added later replace with real
+[33m4512fd5[m improve the size inventory section.
+[33m4fd2e2e[m[33m ([m[1;31morigin/experimentUI[m[33m)[m Delete new_product_intelligence-main directory
+[33m3379d9a[m 7. improved the filters
+[33m810fc37[m 7.status added
+[33m53c4c68[m 6.comined that filter for sold views return
+[33m53a8e4d[m 5.corrected KPI
+[33m91e3189[m 5 working filters
+[33mee56213[m 4.Added the filters
+[33m057bafb[m 3. everything is Final  just need filters
+[33m05895ce[m 3.corrected the vendor
+[33m7dae7c5[m 2. store button modified.
+[33mc6c1ef8[m 2.added the ChangesPage and  improved the best and combined
+[33m5550a88[m[33m ([m[1;32mmaster[m[33m)[m 1.started modifying the Frontend.
+[33m28202a2[m Integrate TDO dashboard
+[33m7bd3b31[m first commit
