@@ -9,6 +9,8 @@ import AuditDetailsModal from './AuditDetailsModal'
 import Header from './Header'
 import ConfirmationDialog from './common/ConfirmationDialog'
 import KpiGrid from './merchandising/KpiGrid'
+import AnalyticsWidgets from './merchandising/AnalyticsWidgets'
+import ExpandedRowGraphs from './merchandising/ExpandedRowGraphs'
 import ProductDetailContent from './merchandising/ProductDetailContent'
 import WorkspaceToolbar, { DEFAULT_CATALOG_VENDOR } from './product-workspace/WorkspaceToolbar'
 import { apiService } from '../services/api'
@@ -101,6 +103,7 @@ const MerchandisingReport = ({ globalStats }) => {
   const [statusFilter, setStatusFilter] = useState('all')
   const [confirmationModal, setConfirmationModal] = useState(null)
   const [isSyncingPrice, setIsSyncingPrice] = useState(false)
+  const [analyticsInsights, setAnalyticsInsights] = useState(null)
   const [isSyncingTags, setIsSyncingTags] = useState(false)
   const [isReverting, setIsReverting] = useState(false)
   const fetchSequenceRef = useRef(0)
@@ -134,9 +137,10 @@ const MerchandisingReport = ({ globalStats }) => {
     try {
         const vendorQuery = currentVendor === 'ALL' ? '' : currentVendor
         const extraParams = { tagSearch, store: activeStoreFilter, status: statusFilter }
-        const [prodRes, statsRes] = await Promise.all([
+        const [prodRes, statsRes, analyticsRes] = await Promise.all([
           apiService.getProducts(vendorQuery, page, itemsPerPage, auditSearch, dateFrom, dateTo, extraParams),
-          apiService.getDashboardStats(vendorQuery, auditSearch, dateFrom, dateTo, extraParams)
+          apiService.getDashboardStats(vendorQuery, auditSearch, dateFrom, dateTo, extraParams),
+          apiService.getDashboardAnalytics(vendorQuery, auditSearch, dateFrom, dateTo, extraParams).catch(() => null)
         ])
 
         const rawProducts = prodRes.products || (Array.isArray(prodRes) ? prodRes : [])
@@ -204,6 +208,7 @@ const MerchandisingReport = ({ globalStats }) => {
           vendors: raw.vendors,
           store_health: raw.store_health,
         })
+        if (analyticsRes) setAnalyticsInsights(analyticsRes)
     } catch (err) {
       console.error('API Error:', err)
     } finally {
@@ -614,6 +619,8 @@ const MerchandisingReport = ({ globalStats }) => {
 
       <KpiGrid stats={stats} />
 
+      <AnalyticsWidgets analytics={analyticsInsights} />
+
       <WorkspaceToolbar
         activeVendor={activeVendor}
         setActiveVendor={setActiveVendor}
@@ -727,32 +734,10 @@ const MerchandisingReport = ({ globalStats }) => {
                 {expandedRows.has(p.internal_id) && (
                   <tr className="bg-slate-50">
                     <td colSpan={7} className="p-4">
-                      <ProductDetailContent
+                      <ExpandedRowGraphs
                         p={p}
-                        selectedColors={selectedColors}
-                        setSelectedColors={setSelectedColors}
-                        activeStoreTabs={activeStoreTabs}
-                        setActiveStoreTabs={setActiveStoreTabs}
-                        editingPrice={editingPrice}
-                        setEditingPrice={setEditingPrice}
                         activeTimeframe={activeTimeframe}
                         setActiveTimeframe={setActiveTimeframe}
-                        addingTag={addingTag}
-                        setAddingTag={setAddingTag}
-                        newTagInput={newTagInput}
-                        setNewTagInput={setNewTagInput}
-                        setSelectedProduct={setSelectedProduct}
-                        setProposedFixes={setProposedFixes}
-                        setActiveIssue={setActiveIssue}
-                        handleTagUpdate={handleTagUpdate}
-                        handleTimeframeChange={handleTimeframeChange}
-                        handleRevertPrice={handleRevertPrice}
-                        handleRevert={handleRevert}
-                        pushToShopifyMerch={pushToShopifyMerch}
-                        savePrice={savePrice}
-                        setConfirmationModal={setConfirmationModal}
-                        getStatusBadge={getStatusBadge}
-                        pushingStyle={pushingStyle}
                       />
                     </td>
                   </tr>

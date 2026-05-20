@@ -69,3 +69,23 @@ async def sync_designers(db: Session = Depends(get_db)):
 @router.get("/check-connections")
 async def check_connections():
     return await StoreService().check_connections()
+
+
+@router.get("/analytics")
+async def get_dashboard_analytics(
+    vendor: str = None,
+    store: str = None,
+    search: str = None,
+    tags: str = None,
+    date_from: str = None,
+    date_to: str = None,
+    db: Session = Depends(get_db),
+):
+    service = DashboardService(db)
+    data = await anyio.to_thread.run_sync(
+        lambda: service.get_analytics(
+            vendor=vendor, store=store, search=search,
+            tags=tags, date_from=date_from, date_to=date_to
+        )
+    )
+    return data

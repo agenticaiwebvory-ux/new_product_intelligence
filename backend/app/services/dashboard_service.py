@@ -1,7 +1,7 @@
 import logging
 import time
 from sqlalchemy.orm import Session
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, desc
 from ..models import catalog as models
 from ..models.merchandising import MerchAnalytics
 from ..config import STORE_CONFIGS, TDO_VENDOR_NAME, MERCH_MODE_KEY
@@ -915,5 +915,114 @@ class DashboardService:
             "page": page,
             "total_pages": max(1, (total_count + limit - 1) // limit),
         }
+
+    def get_analytics(self, vendor=None, store=None, search=None, tags=None, date_from=None, date_to=None):
+        timeframes = ['30', '60', '90']
+        result = {}
+
+        STORE_KEYS = ['TDO', 'WDO', 'KOS', 'IM']
+
+        # ── Base filter for catalog tables ──
+        def catalog_base(model):
+            f = [or_(models.Product.tags == None, ~models.Product.tags.ilike("%discontinued%"))]
+            if vendor and vendor != 'ALL':
+                if model == models.InStockDashboard:
+                    f.append(model.vendor == vendor if vendor != TDO_VENDOR_NAME else model.id == -1)
+                else:
+                    f.append(model.vendor == TDO_VENDOR_NAME if vendor == TDO_VENDOR_NAME else model.id == -1)
+            if store and store != 'ALL':
+                col = getattr(model, f"{store.lower()}_product_id", None)
+                if col is not None:
+                    f.append(col.isnot(None))
+            if search:
+                st = f"%{search}%"
+                f.append(or_(model.style.ilike(st), model.vendor.ilike(st)))
+            return f
+
+        # ── 1. Best sellers by timeframe (overall) ──
+        for tf in timeframes:
+            q = self.db.query(
+                models.MainKos.style,
+                func.sum(models.MainKos.sell_thru).label('total')
+            ).outerjoin(
+                models.Product, models.MainKos.product_id == models.Product.product_id
+            ).filter(
+                or_(models.MainKos.time_frame == tf, models.MainKos.time_frame == f"{tf}d"),
+                models.MainKos.sell_thru > 0
+            )
+            if date_from:
+                q = q.filter(models.Product.published_at >= date_from)
+            if date_to:
+                q = q.filter(models.Product.published_at <= date_to + "T23:59:59Z")
+            if search:
+                st = f"%{search}%"
+                q = q.filter(models.MainKos.style.ilike(st))
+            if tags:
+                q = q.filter(models.Product.tags.ilike(f"%{tags}%"))
+            if vendor and vendor != 'ALL':
+                q = q.outerjoin(
+                    models.InStockDashboard,
+                    models.InStockDashboard.tdo_product_id == models.MainKos.product_id
+                ).outerjoin(
+                    models.TheDressOutlet,
+                    models.TheDressOutlet.tdo_product_id == models.MainKos.product_id
+                ).filter(or_(
+                    models.InStockDashboard.vendor == vendor,
+                    models.TheDressOutlet.vendor == vendor
+                ))
+            rows = q.group_by(models.MainKos.style).order_by(desc('total')).limit(10).all()
+            result[f"best_sellers_{tf}"] = [{"style": r.style, "sold": int(r.total)} for r in rows]
+
+        # ── 2. Per-store best sellers ──
+        per_store = {}
+        for sk in STORE_KEYS:
+            store_data = {}
+            for tf in timeframes:
+                q = self.db.query(
+                    models.MainKos.style,
+                    func.sum(models.MainKos.sell_thru).label('total')
+                ).filter(
+                    or_(models.MainKos.time_frame == tf, models.MainKos.time_frame == f"{tf}d"),
+                    models.MainKos.source == sk.lower(),
+                    models.MainKos.sell_thru > 0
+                )
+                rows = q.group_by(models.MainKos.style).order_by(desc('total')).limit(5).all()
+                store_data[f"best_sellers_{tf}"] = [{"style": r.style, "sold": int(r.total)} for r in rows]
+            per_store[sk] = store_data
+        result["per_store"] = per_store
+
+        # ── 3. Top colors ──
+        color_q = self.db.query(
+            models.MainKos.most_sold_color,
+            func.count(models.MainKos.id).label('cnt')
+        ).filter(
+            models.MainKos.most_sold_color.isnot(None),
+            models.MainKos.most_sold_color != '',
+        ).group_by(models.MainKos.most_sold_color).order_by(desc('cnt')).limit(10).all()
+        result["top_colors"] = [{"color": r.most_sold_color, "count": int(r.cnt)} for r in color_q]
+
+        # ── 4. Highest inventory ──
+        inv_rows = []
+        for tbl, label in [(models.InStockDashboard, 'main'), (models.TheDressOutlet, 'tdo')]:
+            q = self.db.query(tbl).outerjoin(
+                models.Product, getattr(tbl, 'tdo_product_id') == models.Product.product_id
+            ).filter(*catalog_base(tbl), tbl.total_inventory > 0).order_by(desc(tbl.total_inventory)).limit(10)
+            for r in q.all():
+                inv_rows.append({"style": r.style, "inventory": r.total_inventory or 0, "vendor": r.vendor or ''})
+        inv_rows.sort(key=lambda x: x['inventory'], reverse=True)
+        result["highest_inventory"] = inv_rows[:10]
+
+        # ── 5. Lowest stock ──
+        low_rows = []
+        for tbl, label in [(models.InStockDashboard, 'main'), (models.TheDressOutlet, 'tdo')]:
+            q = self.db.query(tbl).outerjoin(
+                models.Product, getattr(tbl, 'tdo_product_id') == models.Product.product_id
+            ).filter(*catalog_base(tbl)).order_by(tbl.total_inventory.asc()).limit(10)
+            for r in q.all():
+                low_rows.append({"style": r.style, "inventory": r.total_inventory or 0, "vendor": r.vendor or ''})
+        low_rows.sort(key=lambda x: x['inventory'])
+        result["lowest_stock"] = low_rows[:10]
+
+        return result
 
     # _parse_tags_categorized removed — use parse_tags_categorized() from app.utils.tag_utils instead.

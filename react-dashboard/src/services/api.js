@@ -124,6 +124,20 @@ export const apiService = {
     return response.data;
   },
 
+  async getDashboardAnalytics(vendor = "", search = "", dateFrom = null, dateTo = null, extraParams = {}) {
+    const response = await api.get('/dashboard/analytics', {
+      params: {
+        vendor: vendor || undefined,
+        store: extraParams.store !== 'ALL' ? extraParams.store : undefined,
+        search: search || undefined,
+        date_from: dateFrom || undefined,
+        date_to: dateTo || undefined,
+        tags: extraParams.tagSearch || undefined,
+      }
+    });
+    return response.data;
+  },
+
   async checkConnections() {
     const response = await api.get('/stores/connections');
     return response.data;
