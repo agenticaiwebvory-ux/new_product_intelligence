@@ -21,6 +21,7 @@ function App() {
   const { isLoggedIn, user } = useAppSelector((state) => state.auth)
   const { activeView, isSidebarCollapsed, sidebarLinks } = useAppSelector((state) => state.layout)
   const [appLoading, setAppLoading] = useState(() => Boolean(isLoggedIn))
+  const [logoError, setLogoError] = useState(false)
 
   useEffect(() => {
     if (isLoggedIn) {
@@ -44,11 +45,17 @@ function App() {
 
   if (appLoading) {
     return (
-      <div className="fixed inset-0 bg-slate-900 z-[9999] flex flex-col items-center justify-center">
+      <div className="fixed inset-0 bg-black z-[9999] flex flex-col items-center justify-center">
         <div className="relative">
-          <div className="w-20 h-20 border-4 border-brand/20 border-t-brand rounded-full animate-spin" />
+          <div className="w-20 h-20 border-4 border-white/20 border-t-white rounded-full animate-spin" />
           <div className="absolute inset-0 flex items-center justify-center">
-            <RefreshCw className="text-brand animate-pulse" size={32} />
+            {logoError ? (
+              <div className="w-8 h-8 border-2 border-white rounded flex items-center justify-center">
+                <span className="text-white text-[1.1rem] font-black leading-none">O</span>
+              </div>
+            ) : (
+              <img src="/logo.jpg" alt="Logo" className="w-10 h-10 object-contain" onError={() => setLogoError(true)} />
+            )}
           </div>
         </div>
         <div className="mt-8 text-center">
@@ -61,7 +68,7 @@ function App() {
 
   return (
     <div className="flex min-h-screen bg-slate-50 overflow-hidden">
-      <Toaster position="top-right" toastOptions={{ duration: 4000, style: { background: '#1e293b', color: '#fff', fontWeight: 'bold' } }} />
+      <Toaster position="top-right" containerStyle={{ zIndex: 10002 }} toastOptions={{ duration: 4000, style: { background: '#1e293b', color: '#fff', fontWeight: 'bold' } }} />
       <Sidebar
         activeView={activeView}
         setActiveView={(view) => dispatch(setActiveView(view))}

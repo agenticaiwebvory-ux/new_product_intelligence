@@ -6,11 +6,11 @@ import { useAppDispatch, useAppSelector } from '../app/hooks'
 import { fetchUsers } from '../features/users/usersSlice'
 
 const PERMISSION_MODULES = [
-  { id: 'perm_dashboard', label: 'Dashboard', icon: LayoutDashboard, color: '#A855F7', bg: '#F5F3FF' },
+  { id: 'perm_dashboard', label: 'Dashboard', icon: LayoutDashboard, color: '#6366F1', bg: '#EEF2FF' },
   { id: 'perm_settings', label: 'Control Panel', icon: Settings, color: '#EA580C', bg: '#FFEDD5' },
 ]
 
-const inputCls = 'w-full px-3 py-3 border-[1.5px] border-slate-200 rounded-xl outline-none bg-white text-slate-900 text-[0.9rem] font-semibold focus:border-brand transition-all'
+const inputCls = 'w-full px-3 py-3 border-[1.5px] border-slate-200 rounded-xl outline-none bg-white text-slate-900 text-[0.9rem] font-semibold focus:border-indigo-500 transition-all'
 const labelCls = 'text-[0.7rem] font-extrabold text-slate-500 uppercase tracking-wider block mb-2'
 
 const ControlPanel = ({ user: currentUser, sidebarLinks, setSidebarLinks }) => {
@@ -81,14 +81,14 @@ const ControlPanel = ({ user: currentUser, sidebarLinks, setSidebarLinks }) => {
   const toggleEditPermission = (permId) => setEditPermissions(prev => ({ ...prev, [permId]: !prev[permId] }))
   const toggleRegPermission = (permId) => setRegPermissions(prev => ({ ...prev, [permId]: !prev[permId] }))
 
-  const selectCls = 'w-full px-3 py-3 border-[1.5px] border-slate-200 rounded-xl outline-none bg-white appearance-none text-[0.9rem] font-bold text-slate-900 cursor-pointer focus:border-brand transition-all'
+  const selectCls = 'w-full px-3 py-3 border-[1.5px] border-slate-200 rounded-xl outline-none bg-white appearance-none text-[0.9rem] font-bold text-slate-900 cursor-pointer focus:border-indigo-500 transition-all'
 
   return (
     <div className="py-8 px-12 max-w-[1200px] mx-auto">
       <header className="mb-12">
         <h1 className="text-[2.25rem] font-black text-slate-900 tracking-tight m-0">
           Control{' '}
-          <span className="bg-gradient-to-r from-brand to-indigo-500 bg-clip-text text-transparent">Panel</span>
+          <span className="bg-gradient-to-r from-indigo-500 to-violet-500 bg-clip-text text-transparent">Panel</span>
         </h1>
         <p className="text-slate-500 text-[1.1rem] mt-2">Manage your dashboard links and team permissions</p>
       </header>
@@ -97,7 +97,7 @@ const ControlPanel = ({ user: currentUser, sidebarLinks, setSidebarLinks }) => {
       <section className="bg-white border border-slate-200 rounded-3xl p-10 shadow-sm mb-12">
         <div className="mb-8">
           <h2 className="text-[1.25rem] font-extrabold text-slate-900 flex items-center gap-3 m-0">
-            <LinkIcon size={22} color="#A855F7" /> Sidebar Navigation Links
+            <LinkIcon size={22} color="#6366F1" /> Sidebar Navigation Links
           </h2>
           <p className="text-[0.9rem] text-slate-500 mt-1">Assign external brand dashboards or useful URLs.</p>
         </div>
@@ -119,7 +119,7 @@ const ControlPanel = ({ user: currentUser, sidebarLinks, setSidebarLinks }) => {
               {sidebarLinks.map((link, idx) => (
                 <tr key={idx} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
                   <td className="px-4 py-[18px] font-bold text-slate-900">{link.label}</td>
-                  <td className="px-4 py-[18px]"><code className="bg-slate-100 px-2 py-1 rounded-md text-[0.85rem] text-brand">{link.url}</code></td>
+                  <td className="px-4 py-[18px]"><code className="bg-slate-100 px-2 py-1 rounded-md text-[0.85rem] text-indigo-500">{link.url}</code></td>
                   <td className="px-4 py-[18px]">{link.icon === 'shopify' ? 'Shopify' : 'Default'}</td>
                   <td className="px-4 py-[18px] text-right">
                     <button onClick={() => handleDeleteLink(idx)} className="bg-red-50 border border-red-200 p-2 rounded-xl text-red-600 cursor-pointer hover:bg-red-100 transition-all">
@@ -151,7 +151,7 @@ const ControlPanel = ({ user: currentUser, sidebarLinks, setSidebarLinks }) => {
               <ChevronDown size={14} color="#64748b" className="absolute right-3 pointer-events-none" />
             </div>
           </div>
-          <button type="submit" className="bg-brand text-white px-6 py-3 rounded-xl border-none font-extrabold cursor-pointer shadow-[0_4px_10px_rgba(168,85,247,0.2)] hover:bg-brand-dark transition-all">
+          <button type="submit" className="bg-indigo-500 text-white px-6 py-3 rounded-xl border-none font-extrabold cursor-pointer shadow-[0_4px_10px_rgba(99,102,241,0.2)] hover:bg-indigo-600 transition-all">
             Add Link
           </button>
         </form>
@@ -162,7 +162,7 @@ const ControlPanel = ({ user: currentUser, sidebarLinks, setSidebarLinks }) => {
         <section className="bg-white border border-slate-200 rounded-3xl p-10 shadow-sm">
           <div className="mb-8">
             <h2 className="text-[1.25rem] font-extrabold text-slate-900 flex items-center gap-3 m-0">
-              <Shield size={22} color="#A855F7" /> Team Access & Module Control
+              <Shield size={22} color="#6366F1" /> Team Access & Module Control
             </h2>
             <p className="text-[0.9rem] text-slate-500 mt-1">Manage system roles and feature permissions.</p>
           </div>
@@ -181,19 +181,19 @@ const ControlPanel = ({ user: currentUser, sidebarLinks, setSidebarLinks }) => {
                 <tr><td colSpan="4" className="px-4 py-8 text-center text-slate-400">Loading team members...</td></tr>
               ) : users.map(u => (
                 <Fragment key={u.id}>
-                  <tr className={`border-b border-slate-100 ${editingUserId === u.id ? 'bg-violet-50/30' : 'hover:bg-slate-50'} transition-colors`}>
+                  <tr className={`border-b border-slate-100 ${editingUserId === u.id ? 'bg-indigo-50/30' : 'hover:bg-slate-50'} transition-colors`}>
                     <td className="px-4 py-[18px] font-bold text-slate-900">{u.username}</td>
                     <td className="px-4 py-[18px]">
                       {editingUserId === u.id ? (
                         <div className="relative flex items-center w-fit">
                           <select value={editRoleValue} onChange={(e) => setEditRoleValue(e.target.value)}
-                            className="pl-2.5 pr-7 py-1.5 rounded-lg border-[1.5px] border-brand outline-none appearance-none bg-white text-[0.8rem] font-bold text-slate-900 cursor-pointer"
+                            className="pl-2.5 pr-7 py-1.5 rounded-lg border-[1.5px] border-indigo-500 outline-none appearance-none bg-white text-[0.8rem] font-bold text-slate-900 cursor-pointer"
                           >
                             <option value="user">User Role</option>
                             <option value="admin">Admin Role</option>
                             <option value="super_admin">Super Admin</option>
                           </select>
-                          <ChevronDown size={12} color="#A855F7" className="absolute right-2 pointer-events-none" />
+                          <ChevronDown size={12} color="#6366F1" className="absolute right-2 pointer-events-none" />
                         </div>
                       ) : (
                         <span className="bg-slate-100 text-slate-500 px-2.5 py-1 rounded-md text-[0.7rem] font-black uppercase">{u.role}</span>
@@ -238,15 +238,15 @@ const ControlPanel = ({ user: currentUser, sidebarLinks, setSidebarLinks }) => {
                   </tr>
                   {editingUserId === u.id && (
                     <tr>
-                      <td colSpan="4" className="px-4 pb-5 bg-violet-50/20">
-                        <div className="flex gap-4 items-center bg-white p-4 rounded-xl border border-violet-200">
+                      <td colSpan="4" className="px-4 pb-5 bg-indigo-50/20">
+                        <div className="flex gap-4 items-center bg-white p-4 rounded-xl border border-indigo-200">
                           <label className="text-[0.75rem] font-extrabold text-slate-500 whitespace-nowrap">CHANGE PASSWORD:</label>
                           <input
                             type="password"
                             placeholder="Leave blank to keep current"
                             value={editPassword}
                             onChange={(e) => setEditPassword(e.target.value)}
-                            className="px-3 py-2 border border-slate-200 rounded-lg flex-1 outline-none focus:border-brand text-[0.9rem]"
+                            className="px-3 py-2 border border-slate-200 rounded-lg flex-1 outline-none focus:border-indigo-500 text-[0.9rem]"
                           />
                         </div>
                       </td>
@@ -258,8 +258,8 @@ const ControlPanel = ({ user: currentUser, sidebarLinks, setSidebarLinks }) => {
           </table>
 
           {/* Register Section */}
-          <div className="mt-10 p-10 bg-violet-50 rounded-3xl border border-violet-200">
-            <h3 className="text-[1.1rem] font-extrabold text-brand mb-6 flex items-center gap-2.5 m-0">
+          <div className="mt-10 p-10 bg-indigo-50 rounded-3xl border border-indigo-200">
+            <h3 className="text-[1.1rem] font-extrabold text-indigo-500 mb-6 flex items-center gap-2.5 m-0">
               <UserPlus size={20} /> Register New Member
             </h3>
             <div className="grid grid-cols-3 gap-6 mb-8">
@@ -315,7 +315,7 @@ const ControlPanel = ({ user: currentUser, sidebarLinks, setSidebarLinks }) => {
             <button
               onClick={handleRegisterUser}
               disabled={isRegistering}
-              className="w-full bg-brand text-white py-[18px] rounded-2xl border-none font-black text-[1.05rem] cursor-pointer shadow-[0_8px_20px_rgba(168,85,247,0.25)] hover:bg-brand-dark transition-all disabled:opacity-70 disabled:cursor-not-allowed"
+              className="w-full bg-indigo-500 text-white py-[18px] rounded-2xl border-none font-black text-[1.05rem] cursor-pointer shadow-[0_8px_20px_rgba(99,102,241,0.25)] hover:bg-indigo-600 transition-all disabled:opacity-70 disabled:cursor-not-allowed"
             >
               {isRegistering ? 'Registering...' : 'Activate Account & Grant Access'}
             </button>

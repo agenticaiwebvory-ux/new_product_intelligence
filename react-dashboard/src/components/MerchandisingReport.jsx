@@ -109,6 +109,7 @@ const MerchandisingReport = ({ globalStats }) => {
   const [isSyncingPrice, setIsSyncingPrice] = useState(false)
   const [isSyncingTags, setIsSyncingTags] = useState(false)
   const [isReverting, setIsReverting] = useState(false)
+  const [processingOps, setProcessingOps] = useState({})
   const fetchSequenceRef = useRef(0)
   const filterKeyRef = useRef('')
 
@@ -280,7 +281,7 @@ const MerchandisingReport = ({ globalStats }) => {
     }
   }
 
-  const handlePushToShopify = async () => {
+  const handlePushToShopify = () => {
     if (!selectedProduct) return
     const payload = {
       title: proposedFixes.title,
@@ -298,25 +299,29 @@ const MerchandisingReport = ({ globalStats }) => {
       message: `Are you sure you want to push these AI-generated updates to the LIVE Shopify store?`,
       confirmText: 'Push Updates',
       confirmClass: 'bg-brand hover:opacity-90',
-      onConfirm: async () => {
-        setIsSyncingPrice(true); // Reuse syncing state for general push
-        try {
-          const linkedStores = selectedProduct.stores?.split(',').map(s => s.trim()) || ['TDO']
-          const result = await apiService.pushProductUpdate(selectedProduct.sku, { ...payload, stores: linkedStores }, false)
-          if (result.status === 'failed') {
-            toast.error('Shopify Push Failed: ' + (result.message || result.summary || 'Store connection or backup error'))
-            return
-          }
-          toast.success('Changes pushed to Shopify successfully!')
-          setSelectedProduct(null)
-          fetchData(true)
-          setConfirmationModal(null);
-        } catch (err) {
-          console.error('Push failed:', err)
-          toast.error('Push failed');
-        } finally {
-          setIsSyncingPrice(false);
-        }
+      onConfirm: () => {
+        const sku = selectedProduct.sku
+        const linkedStores = selectedProduct.stores?.split(',').map(s => s.trim()) || ['TDO']
+
+        setProcessingOps(prev => ({ ...prev, [sku]: { type: 'pushing_fixes' } }))
+        setConfirmationModal(null)
+        setSelectedProduct(null)
+
+        apiService.pushProductUpdate(sku, { ...payload, stores: linkedStores }, false)
+          .then(result => {
+            if (result.status === 'failed') {
+              toast.error('Shopify Push Failed: ' + (result.message || result.summary || 'Store connection or backup error'))
+            } else {
+              toast.success('Changes pushed to Shopify successfully!')
+            }
+          })
+          .catch(err => {
+            toast.error('Push failed')
+          })
+          .finally(() => {
+            setProcessingOps(prev => { const n = { ...prev }; delete n[sku]; return n })
+            fetchData(true)
+          })
       }
     });
   }
@@ -348,42 +353,48 @@ const MerchandisingReport = ({ globalStats }) => {
     toast.info(`Tag ${action === 'add' ? 'added' : 'removed'} to drafts`, { icon: '📝' });
   };
 
-  const pushToShopifyMerch = async (product) => {
+  const pushToShopifyMerch = (product) => {
     setConfirmationModal({
       title: 'Sync Tags to Shopify',
       message: `Are you sure you want to push tag updates for ${product.sku} to Shopify?`,
       confirmText: 'Push Tags',
       confirmClass: 'bg-indigo-600 hover:bg-indigo-700',
-      onConfirm: async () => {
-        setIsSyncingTags(true);
-        setPushingStyle(product.sku);
-        try {
-          const res = await apiService.updateMerchTags(product.sku, product.tags_categorized);
-          if (res.status === 'success' || res.status === 'partial_success') {
-            toast.success(res.message || 'Pushed to Shopify and saved!');
-            const drafts = readJsonStorage(MERCH_DRAFTS_STORAGE_KEY, {});
-            delete drafts[product.internal_id || product.product_id];
-            writeJsonStorage(MERCH_DRAFTS_STORAGE_KEY, drafts);
-            setProducts(prev => prev.map(p =>
-              (p.internal_id === product.internal_id || p.product_id === product.product_id)
-                ? { ...p, sync_status: { ...(p.sync_status || {}), tags: false }, needs_sync: false }
-                : p
-            ));
-            setConfirmationModal(null);
-          } else {
-            toast.error(res.message || 'Push failed');
-          }
-        } catch (err) {
-          toast.error('Push failed: ' + (err.response?.data?.detail || err.message));
-        } finally {
-          setIsSyncingTags(false);
-          setPushingStyle(null);
-        }
+      onConfirm: () => {
+        const sku = product.sku
+        const pid = product.internal_id || product.product_id
+
+        setProcessingOps(prev => ({ ...prev, [sku]: { type: 'pushing_tags' } }))
+        setConfirmationModal(null)
+        setDetailProduct(null)
+
+        apiService.updateMerchTags(sku, product.tags_categorized)
+          .then(res => {
+            if (res.status === 'success' || res.status === 'partial_success') {
+              toast.success(res.message || 'Pushed to Shopify and saved!')
+              const drafts = readJsonStorage(MERCH_DRAFTS_STORAGE_KEY, {})
+              delete drafts[pid]
+              writeJsonStorage(MERCH_DRAFTS_STORAGE_KEY, drafts)
+              setProducts(prev => prev.map(p =>
+                (p.internal_id === pid || p.product_id === pid)
+                  ? { ...p, sync_status: { ...(p.sync_status || {}), tags: false }, needs_sync: false }
+                  : p
+              ))
+            } else {
+              toast.error(res.message || 'Push failed')
+            }
+          })
+          .catch(err => {
+            toast.error('Push failed: ' + (err.response?.data?.detail || err.message))
+          })
+          .finally(() => {
+            setProcessingOps(prev => { const n = { ...prev }; delete n[sku]; return n })
+            fetchData(true)
+          })
       }
     });
   };
 
-  const pushPriceToShopify = async (product, storeKey = 'TDO') => {
+  const pushPriceToShopify = (product, storeKey = 'TDO') => {
     const normalizedStore = (storeKey || 'TDO').toUpperCase()
     const isRetailStore = normalizedStore === 'TDO'
     const targetPrice = (isRetailStore ? product.retail_price : product.wholesale_price) ?? product.store_prices?.[normalizedStore]?.price
@@ -392,81 +403,62 @@ const MerchandisingReport = ({ globalStats }) => {
       message: `Push ${normalizedStore} price ${formatMoney(targetPrice)} for ${product.sku} to Shopify?`,
       confirmText: 'Push to Shopify',
       confirmClass: 'bg-emerald-600 hover:bg-emerald-700',
-      onConfirm: async () => {
-        setIsSyncingPrice(true);
-        setPushingStyle(product.sku);
-        try {
-          const payload = { stores: [normalizedStore] }
-          if (product.retail_price !== null && product.retail_price !== undefined) {
-            payload.retail_price = product.retail_price
-          }
-          if (product.wholesale_price !== null && product.wholesale_price !== undefined) {
-            payload.wholesale_price = product.wholesale_price
-          }
-          if (isRetailStore && payload.retail_price === undefined) {
-            payload.retail_price = targetPrice
-          }
-          if (!isRetailStore && payload.wholesale_price === undefined) {
-            payload.wholesale_price = targetPrice
-          }
-          console.log('[pushPriceToShopify] Submitting price push to Shopify API:', { sku: product.sku, ...payload });
-          
-          const res = await apiService.pushProductUpdate(product.sku, payload, false);
-          
-          console.log('[pushPriceToShopify] API push response:', res);
-          
-if (res.status === 'success' || res.status === 'partial_success') {
-            toast.success(`${normalizedStore} price pushed to Shopify!`);
-            
-            const backupRetail = product.backup_retail_price;
-            const backupWholesale = product.backup_wholesale_price;
-            
-            // Update local state before fetchData so mergePreservedAnalytics has correct prev
-            setProducts(prev => prev.map(p => {
-              if (p.sku === product.sku) {
-                return {
-                  ...p,
-                  backup_retail_price: backupRetail,
-                  backup_wholesale_price: backupWholesale,
-                  sync_status: { ...(p.sync_status || {}), price: false, wholesale: false }
-                };
-              }
-              return p;
-            }));
-            
-            await fetchData(true);
-            
-            // Ensure backup values survive the merge (mergePreservedAnalytics may skip them)
-            setProducts(prev => prev.map(p => {
-              if (p.sku === product.sku) {
-                return {
-                  ...p,
-                  backup_retail_price: p.backup_retail_price ?? backupRetail,
-                  backup_wholesale_price: p.backup_wholesale_price ?? backupWholesale,
-                };
-              }
-              return p;
-            }));
-            
-            setConfirmationModal(null);
-          } else {
-            const detailMsg = res.message || (res.details ? JSON.stringify(res.details) : 'Push failed');
-            console.warn('[pushPriceToShopify] Shopify sync returned non-success:', res);
-            toast.error('Sync failed: ' + detailMsg);
-          }
-        } catch (err) {
-          console.error('[pushPriceToShopify] Shopify price push API call failed:', err);
-          const errorMsg = err.response?.data?.detail || err.message || 'Unknown network error';
-          toast.error('Push failed: ' + errorMsg);
-        } finally {
-          setIsSyncingPrice(false);
-          setPushingStyle(null);
+      onConfirm: () => {
+        const sku = product.sku
+        const payload = { stores: [normalizedStore] }
+        if (product.retail_price !== null && product.retail_price !== undefined) {
+          payload.retail_price = product.retail_price
         }
+        if (product.wholesale_price !== null && product.wholesale_price !== undefined) {
+          payload.wholesale_price = product.wholesale_price
+        }
+        if (isRetailStore && payload.retail_price === undefined) {
+          payload.retail_price = targetPrice
+        }
+        if (!isRetailStore && payload.wholesale_price === undefined) {
+          payload.wholesale_price = targetPrice
+        }
+        
+        setProcessingOps(prev => ({ ...prev, [sku]: { type: 'pushing_price', storeKey: normalizedStore } }))
+        setConfirmationModal(null)
+        setDetailProduct(null)
+        
+        const backupRetail = product.backup_retail_price
+        const backupWholesale = product.backup_wholesale_price
+        
+        apiService.pushProductUpdate(sku, payload, false)
+          .then(res => {
+            if (res.status === 'success' || res.status === 'partial_success') {
+              toast.success(`${normalizedStore} price pushed to Shopify!`)
+              setProducts(prev => prev.map(p => {
+                if (p.sku === sku) {
+                  return {
+                    ...p,
+                    backup_retail_price: backupRetail,
+                    backup_wholesale_price: backupWholesale,
+                    sync_status: { ...(p.sync_status || {}), price: false, wholesale: false }
+                  }
+                }
+                return p
+              }))
+            } else {
+              const detailMsg = res.message || (res.details ? JSON.stringify(res.details) : 'Push failed')
+              toast.error('Sync failed: ' + detailMsg)
+            }
+          })
+          .catch(err => {
+            const errorMsg = err.response?.data?.detail || err.message || 'Unknown network error'
+            toast.error('Push failed: ' + errorMsg)
+          })
+          .finally(() => {
+            setProcessingOps(prev => { const n = { ...prev }; delete n[sku]; return n })
+            fetchData(true)
+          })
       }
     });
   };
 
-  const handleRevert = async (type = 'all', targetProd = null) => {
+  const handleRevert = (type = 'all', targetProd = null) => {
     const product = targetProd || selectedProduct
     if (!product) return
 
@@ -480,36 +472,41 @@ if (res.status === 'success' || res.status === 'partial_success') {
       message,
       confirmText: 'Confirm Revert',
       confirmClass: 'bg-red-600 hover:bg-red-700',
-      onConfirm: async () => {
-        setIsReverting(true);
-        try {
-          const payload = {}
-          if (type === 'title') payload.title = product.backup_title
-          if (type === 'description') payload.description = product.backup_description
-          if (type === 'meta_title') payload.meta_title = product.backup_meta_title
-          if (type === 'meta_description') payload.meta_description = product.backup_meta_description
+      onConfirm: () => {
+        const sku = product.sku
+        
+        setProcessingOps(prev => ({ ...prev, [sku]: { type: 'reverting', storeKey: type } }))
+        setConfirmationModal(null)
+        setDetailProduct(null)
+        setSelectedProduct(null)
 
-          if (type === 'all') {
-            await apiService.revertUpdate(product.sku, 'all')
-          } else {
-            await apiService.pushProductUpdate(product.sku, payload, true)
-          }
+        const apiCall = type === 'all'
+          ? apiService.revertUpdate(sku, 'all')
+          : apiService.pushProductUpdate(sku, (() => {
+              const payload = {}
+              if (type === 'title') payload.title = product.backup_title
+              if (type === 'description') payload.description = product.backup_description
+              if (type === 'meta_title') payload.meta_title = product.backup_meta_title
+              if (type === 'meta_description') payload.meta_description = product.backup_meta_description
+              return payload
+            })(), true)
 
-          toast.success(`Successfully reverted ${type === 'all' ? 'product' : type}`)
-          await fetchData(true)
-          setSelectedProduct(null)
-          setConfirmationModal(null);
-        } catch (err) {
-          console.error('Revert failed:', err)
-          toast.error('Failed to revert: ' + (err.response?.data?.detail || err.message))
-        } finally {
-          setIsReverting(false);
-        }
+        apiCall
+          .then(() => {
+            toast.success(`Successfully reverted ${type === 'all' ? 'product' : type}`)
+          })
+          .catch(err => {
+            toast.error('Failed to revert: ' + (err.response?.data?.detail || err.message))
+          })
+          .finally(() => {
+            setProcessingOps(prev => { const n = { ...prev }; delete n[sku]; return n })
+            fetchData(true)
+          })
       }
     });
   }
 
-  const handleRevertPrice = async (product, storeKey = null) => {
+  const handleRevertPrice = (product, storeKey = null) => {
     const normalizedStore = (storeKey || 'TDO').toUpperCase()
     const isRetailStore = normalizedStore === 'TDO'
     const currentPrice = product.store_prices?.[normalizedStore]?.price ?? (isRetailStore ? product.retail_price : product.wholesale_price)
@@ -525,46 +522,44 @@ if (res.status === 'success' || res.status === 'partial_success') {
       message: `Revert ${normalizedStore} price for ${product.sku} from ${formatMoney(currentPrice)} to ${formatMoney(restorePrice)}?`,
       confirmText: 'Revert Price',
       confirmClass: 'bg-rose-600 hover:bg-rose-700',
-onConfirm: async () => {
-        setIsReverting(true);
-        try {
-          console.log('[handleRevertPrice] Calling revert API for', product.sku, normalizedStore, 'backup:', product.backup_retail_price);
-          const resp = await apiService.revertUpdate(product.sku, 'price', normalizedStore);
-          console.log('[handleRevertPrice] API response:', resp);
-          toast.success(`${normalizedStore} price reverted to ${formatMoney(restorePrice)}`);
-          
-          // Update local state to reflect the revert before fetchData runs,
-          // so mergePreservedAnalytics has the correct prev values
-          const backupRetail = product.backup_retail_price;
-          const backupWholesale = product.backup_wholesale_price;
-          setProducts(prev => prev.map(p => {
-            if (p.sku === product.sku) {
-              const nextStorePrices = p.store_prices?.[normalizedStore]
-                ? { ...p.store_prices, [normalizedStore]: { ...p.store_prices[normalizedStore], price: backupRetail } }
-                : p.store_prices;
-              return {
-                ...p,
-                retail_price: backupRetail ?? p.retail_price,
-                wholesale_price: backupWholesale ?? p.wholesale_price,
-                store_prices: nextStorePrices,
-                backup_retail_price: undefined,
-                backup_wholesale_price: undefined,
-                sync_status: { ...(p.sync_status || {}), price: false, wholesale: false }
-              };
-            }
-            return p;
-          }));
-          
-          console.log('[handleRevertPrice] Calling fetchData(true)...');
-          await fetchData(true);
-          console.log('[handleRevertPrice] fetchData completed');
-          setConfirmationModal(null);
-        } catch (err) {
-          console.error('[handleRevertPrice] Error:', err);
-          toast.error('Revert failed: ' + (err.response?.data?.detail || err.message));
-        } finally {
-          setIsReverting(false);
-        }
+      onConfirm: () => {
+        const sku = product.sku
+        
+        setProcessingOps(prev => ({ ...prev, [sku]: { type: 'reverting_price', storeKey: normalizedStore } }))
+        setConfirmationModal(null)
+        setDetailProduct(null)
+        
+        const backupRetail = product.backup_retail_price
+        const backupWholesale = product.backup_wholesale_price
+        
+        apiService.revertUpdate(sku, 'price', normalizedStore)
+          .then(resp => {
+            toast.success(`${normalizedStore} price reverted to ${formatMoney(restorePrice)}`)
+            setProducts(prev => prev.map(p => {
+              if (p.sku === sku) {
+                const nextStorePrices = p.store_prices?.[normalizedStore]
+                  ? { ...p.store_prices, [normalizedStore]: { ...p.store_prices[normalizedStore], price: backupRetail } }
+                  : p.store_prices
+                return {
+                  ...p,
+                  retail_price: backupRetail ?? p.retail_price,
+                  wholesale_price: backupWholesale ?? p.wholesale_price,
+                  store_prices: nextStorePrices,
+                  backup_retail_price: undefined,
+                  backup_wholesale_price: undefined,
+                  sync_status: { ...(p.sync_status || {}), price: false, wholesale: false }
+                }
+              }
+              return p
+            }))
+          })
+          .catch(err => {
+            toast.error('Revert failed: ' + (err.response?.data?.detail || err.message))
+          })
+          .finally(() => {
+            setProcessingOps(prev => { const n = { ...prev }; delete n[sku]; return n })
+            fetchData(true)
+          })
       }
     });
   };
@@ -795,6 +790,7 @@ onConfirm: async () => {
                         <div className="text-[0.9rem] font-black text-slate-900 tracking-tight">
                           {p.style}
                         </div>
+                        {processingOps[p.sku] && <RefreshCw size={14} className="animate-spin text-brand shrink-0" />}
                         {getStatusBadge(p.shopify_status, true)}
                       </div>
                       <div className="text-[0.7rem] text-slate-400 font-bold truncate max-w-[180px]" title={p.title}>{p.title}</div>

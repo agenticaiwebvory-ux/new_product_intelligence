@@ -44,7 +44,7 @@ export default function ProductDetailContent({
   const activePriceField = activeStoreKey === 'TDO' ? 'retail' : 'wholesale'
   const activeSyncKey = activeStoreKey === 'TDO' ? 'price' : 'wholesale'
   const activeBackupPrice = activeStoreKey === 'TDO' ? p.backup_retail_price : p.backup_wholesale_price
-  const canRevertActivePrice = activeBackupPrice !== null && activeBackupPrice !== undefined
+  const canRevertActivePrice = activeBackupPrice !== null && activeBackupPrice !== undefined && activeBackupPrice !== displayPrice
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm space-y-4">

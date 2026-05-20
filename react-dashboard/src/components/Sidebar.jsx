@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Settings, ExternalLink, LogOut, Globe, Menu, ChevronLeft, Search, ShoppingBag, Home, Package, Store, Tag, GitCommitHorizontal, LayoutDashboard } from 'lucide-react'
+import { Settings, ExternalLink, Globe, Menu, ChevronLeft, Search, ShoppingBag, Home, Package, Store, Tag, GitCommitHorizontal, LayoutDashboard, Power } from 'lucide-react'
 import { useAppDispatch, useAppSelector } from '../app/hooks'
 import { fetchStoreConnections } from '../features/stores/storesSlice'
 
@@ -163,51 +163,61 @@ const Sidebar = ({ activeView, setActiveView, user, onLogout, sidebarLinks = [],
           </a>
         ))}
 
-        {/* Store Connectivity */}
-        <div className={`mt-auto ${isCollapsed ? 'py-4' : 'py-6 px-3'} border-t border-slate-100`}>
-          {!isCollapsed && (
-            <div className="text-[0.65rem] text-slate-400 font-extrabold uppercase tracking-widest mb-3 pl-2">
-              Store Connectivity
-            </div>
-          )}
-          <div className="flex flex-col gap-2">
-            {storeKeys.map(store => (
-              <div
-                key={store}
-                title={`${store.toUpperCase()} Status: ${connections[store] ? 'Online' : 'Offline'}`}
-                className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg transition-all ${isCollapsed ? 'justify-center bg-transparent' : connections[store] ? 'bg-green-50' : 'bg-red-50'}`}
-              >
-                <div
-                  className={`w-2 h-2 rounded-full shrink-0 ${connections[store] ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]' : 'bg-red-500'}`}
-                />
-                {!isCollapsed && (
-                  <span className={`text-[0.75rem] font-bold uppercase ${connections[store] ? 'text-green-800' : 'text-red-800'}`}>
-                    {store}
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
       </div>
 
-      {/* Footer */}
-      <div
-        className={`${isCollapsed ? 'px-3 justify-center' : 'px-6 justify-between'} py-5 border-t border-slate-200 bg-white flex items-center gap-2.5`}
-      >
-        {!isCollapsed && (
-          <div className="min-w-0">
-            <div className="text-[0.85rem] font-extrabold text-slate-900 truncate">{user?.username}</div>
-            <div className="text-[0.65rem] font-extrabold text-brand uppercase">{user?.role}</div>
-          </div>
-        )}
-        <button
-          onClick={onLogout}
-          title="Sign Out"
-          className="bg-red-50 text-red-600 border border-red-200 p-2 rounded-xl cursor-pointer flex items-center justify-center transition-all hover:bg-red-100 shrink-0"
-        >
-          <LogOut size={18} />
-        </button>
+      {/* Bordered Container for Stores + Footer */}
+      <div className="mx-3 mb-3 mt-auto border border-slate-200 rounded-lg shadow-sm">
+        {/* Store Connectivity */}
+        {(() => {
+          const allActive = storeKeys.every(k => connections[k])
+          return (
+            <div className={`${isCollapsed ? 'py-4 flex justify-center' : 'py-3 px-3.5'}`}>
+              {!isCollapsed && (
+                <div className="text-[0.65rem] text-slate-400 font-extrabold uppercase tracking-widest mb-3">
+                  Stores
+                </div>
+              )}
+              <div className={`flex ${isCollapsed ? 'justify-center' : 'justify-start'} items-center gap-1`}>
+                {storeKeys.map(store => (
+                  <div
+                    key={store}
+                    title={`${store.toUpperCase()}: ${connections[store] ? 'Online' : 'Offline'}`}
+                    className={`w-2 h-2 rounded-full ${
+                      connections[store]
+                        ? 'bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.5)]'
+                        : 'bg-red-500'
+                    }`}
+                  />
+                ))}
+              </div>
+            </div>
+          )
+        })()}
+
+        {/* Divider line */}
+        <div className="border-t border-slate-200/60"></div>
+
+        {/* Footer */}
+        <div className={`${isCollapsed ? 'py-4 flex justify-center' : 'py-3 px-3.5 flex items-center justify-between'}`}>
+          {!isCollapsed && (
+            <div className="min-w-0">
+              <div className="text-[0.85rem] font-extrabold text-slate-900 truncate">{user?.username}</div>
+              <div className="flex items-center gap-1.5 mt-1">
+                <div className={`w-0.5 h-3 rounded-full ${user?.role === 'super_admin' ? 'bg-amber-400' : user?.role === 'admin' ? 'bg-indigo-400' : 'bg-slate-300'}`} />
+                <span className={`text-[0.6rem] font-black uppercase tracking-wider ${user?.role === 'super_admin' ? 'text-amber-600' : user?.role === 'admin' ? 'text-indigo-500' : 'text-slate-400'}`}>
+                  {user?.role === 'super_admin' ? 'Super Admin' : user?.role === 'admin' ? 'Admin' : user?.role}
+                </span>
+              </div>
+            </div>
+          )}
+          <button
+            onClick={onLogout}
+            title="Sign Out"
+            className={`shrink-0 w-9 h-9 flex items-center justify-center rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50 transition-all cursor-pointer ${isCollapsed ? '' : ''}`}
+          >
+            <Power size={17} />
+          </button>
+        </div>
       </div>
     </aside>
   )
