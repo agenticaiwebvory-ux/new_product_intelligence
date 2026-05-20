@@ -26,6 +26,7 @@ class PushUpdate(BaseModel):
     stores: Optional[List[str]] = ["TDO"]
 
 import anyio
+import httpx
 
 @router.get("/")
 async def get_products(
@@ -262,3 +263,212 @@ async def get_sku_analytics(sku: str, timeframe: str = "7", db: Session = Depend
         from ..services.dashboard_service import DashboardService
         service = DashboardService(db)
         return service.get_style_analytics(sku, timeframe)
+
+@router.get("/{sku}/shopify-analytics")
+async def get_sku_shopify_analytics(
+    sku: str,
+    timeframe: str = "90",
+    store: str = "tdo",
+    db: Session = Depends(get_db)
+):
+    """Queries Shopify Orders GraphQL for per-product analytics: sales time series, variant breakdown."""
+    from ..config import STORE_CONFIGS
+    from ..integrations.shopify.client import ShopifyClient
+    import json
+    from datetime import datetime, timedelta
+
+    store_key = store.lower()
+    config = STORE_CONFIGS.get(store_key)
+    if not config:
+        raise HTTPException(status_code=400, detail=f"Store '{store}' not configured")
+
+    client = ShopifyClient(config)
+    valid, code, msg = await client.validate_connection(log_to_db=False)
+    if not valid:
+        raise HTTPException(status_code=502, detail=f"Shopify {store_key.upper()} unavailable: {msg}")
+
+    # Also fetch local analytics as fallback
+    from ..services.dashboard_service import DashboardService
+    dash_service = DashboardService(db)
+    local = dash_service.get_style_analytics(sku, timeframe)
+
+    base_sku = sku.split('~')[0].split('-')[0].strip()
+    days = int(timeframe)
+    since_date = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
+
+    # Look up the product's TDO product ID from the database
+    from ..models import catalog as db_models
+    product_row = db.query(db_models.InStockDashboard).filter(
+        db_models.InStockDashboard.style == sku
+    ).first()
+    if not product_row:
+        product_row = db.query(db_models.InStockDashboard).filter(
+            db_models.InStockDashboard.style.like(f"{base_sku}%")
+        ).first()
+
+    # Use correct product ID column for this store
+    product_id_col = f"{store_key}_product_id"
+    product_id = getattr(product_row, product_id_col, None) if product_row else None
+
+    if not product_id:
+        return {
+            "store": store_key,
+            "sku": sku,
+            "timeframe": timeframe,
+            "sales_series": [],
+            "variants": [],
+            "sales_breakdown": {},
+            "totals": {"total_sales": 0, "total_orders": 0, "total_returns": 0, "avg_order_value": 0},
+            "local_fallback": local,
+        }
+
+    # Use Shopify REST API with product_id filter (fast, server-side filtering)
+    rest_url = f"https://{config['shop_domain']}/admin/api/{config['api_version']}/orders.json"
+    rest_headers = {"X-Shopify-Access-Token": config["access_token"], "Content-Type": "application/json"}
+
+    orders = []
+    try:
+        params = {"product_id": product_id, "created_at_min": since_date, "status": "any", "limit": 250}
+        async with httpx.AsyncClient(timeout=30.0) as c:
+            while True:
+                resp = await c.get(rest_url, params=params, headers=rest_headers)
+                if resp.status_code != 200:
+                    return {
+                        "store": store_key, "sku": sku, "timeframe": timeframe,
+                        "sales_series": [], "variants": [], "sales_breakdown": {},
+                        "totals": {"total_sales": 0, "total_orders": 0, "avg_order_value": 0, "net_sales": 0},
+                        "local_fallback": local, "error": f"REST API {resp.status_code}"
+                    }
+                data = resp.json()
+                orders.extend(data.get("orders", []))
+                link = resp.headers.get("Link", "")
+                if 'rel="next"' not in link:
+                    break
+                m = __import__("re").search(r'page_info=([^&>]+)', link)
+                if not m:
+                    break
+                params = {"page_info": m.group(1), "limit": 250}
+    except Exception as e:
+        return {
+            "store": store_key, "sku": sku, "timeframe": timeframe,
+            "sales_series": [], "variants": [], "sales_breakdown": {},
+            "totals": {"total_sales": 0, "total_orders": 0, "avg_order_value": 0, "net_sales": 0},
+            "local_fallback": local, "error": str(e)
+        }
+
+    # Process line items matching our product ID
+    daily_sales = {}
+    daily_orders = {}
+    daily_returns = {}
+    daily_return_orders = {}
+    variants = []
+    color_size_breakdown = {}
+    return_breakdown = {}
+
+    def matches_product(li):
+        li_pid = li.get("product_id")
+        if product_id and li_pid == product_id:
+            return True
+        li_sku = (li.get("sku") or "").upper()
+        if li_sku.startswith(base_sku.upper()) or base_sku.upper() in li_sku:
+            return True
+        return False
+
+    for order in orders:
+        created = order.get("created_at", "")[:10]
+        total_str = order.get("total_price", "0")
+
+        line_items = order.get("line_items", [])
+        matched_items = [li for li in line_items if matches_product(li)]
+
+        if not matched_items:
+            continue
+
+        try:
+            total_val = float(total_str)
+        except:
+            total_val = 0
+
+        daily_sales[created] = daily_sales.get(created, 0) + total_val
+        daily_orders[created] = daily_orders.get(created, 0) + 1
+
+        for li in matched_items:
+            li_sku = (li.get("sku") or "")
+            qty = li.get("quantity", 1)
+            try:
+                unit_price = float(li.get("price", 0))
+            except:
+                unit_price = 0
+            variant_revenue = unit_price * qty
+
+            variants.append({
+                "sku": li_sku,
+                "title": li.get("title", ""),
+                "quantity": qty,
+                "revenue": round(variant_revenue, 2),
+                "order_date": created,
+            })
+
+            parts = li_sku.replace(base_sku, "", 1).strip("- ").split("-")
+            if len(parts) >= 2:
+                color = parts[0].strip()
+                size = parts[-1].strip()
+                if color not in color_size_breakdown:
+                    color_size_breakdown[color] = {}
+                color_size_breakdown[color][size] = color_size_breakdown[color].get(size, 0) + qty
+
+        # --- Process refunds (returns) ---
+        for refund in order.get("refunds", []):
+            for ri in refund.get("refund_line_items", []):
+                ri_line_item = ri.get("line_item", {})
+                refund_qty = ri.get("quantity", 0)
+                if refund_qty > 0 and matches_product(ri_line_item):
+                    if created not in daily_returns:
+                        daily_returns[created] = 0
+                    daily_returns[created] += refund_qty
+                    daily_return_orders[created] = daily_return_orders.get(created, 0) + 1
+
+                    # Parse color/size from refunded SKU
+                    ref_sku = (ri_line_item.get("sku") or "")
+                    ref_parts = ref_sku.replace(base_sku, "", 1).strip("- ").split("-")
+                    if len(ref_parts) >= 2:
+                        ref_color = ref_parts[0].strip()
+                        ref_size = ref_parts[-1].strip()
+                        if ref_color not in return_breakdown:
+                            return_breakdown[ref_color] = {}
+                        return_breakdown[ref_color][ref_size] = return_breakdown[ref_color].get(ref_size, 0) + refund_qty
+
+    # Build sorted time series
+    all_dates = sorted(set(list(daily_sales.keys()) + list(daily_orders.keys()) + list(daily_returns.keys())))
+    sales_series = [
+        {"period": d, "total_sales": daily_sales.get(d, 0), "orders": daily_orders.get(d, 0)}
+        for d in all_dates
+    ]
+    returns_series = [
+        {"period": d, "returns": daily_returns.get(d, 0), "return_orders": daily_return_orders.get(d, 0)}
+        for d in all_dates if d in daily_returns
+    ]
+
+    total_sales = sum(s["total_sales"] for s in sales_series)
+    total_orders = sum(s["orders"] for s in sales_series)
+    total_returns = sum(r["returns"] for r in returns_series)
+    avg_order_value = total_sales / total_orders if total_orders else 0
+
+    return {
+        "store": store_key,
+        "sku": sku,
+        "timeframe": timeframe,
+        "sales_series": sales_series,
+        "returns_series": returns_series,
+        "variants": variants,
+        "sales_breakdown": color_size_breakdown,
+        "returns_breakdown": return_breakdown,
+        "totals": {
+            "total_sales": round(total_sales, 2),
+            "total_orders": int(total_orders),
+            "total_returns": total_returns,
+            "avg_order_value": round(avg_order_value, 2),
+            "line_items_count": len(variants),
+        },
+        "local_fallback": local if not sales_series else None,
+    }

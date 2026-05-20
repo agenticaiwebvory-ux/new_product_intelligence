@@ -274,5 +274,21 @@ export const apiService = {
       tags_categorized
     });
     return response.data;
+  },
+
+  // 5. ShopifyQL Analytics
+  async getShopifyAnalytics(sku, timeframe = '90', store = 'tdo') {
+    const response = await api.get(`/products/${sku}/shopify-analytics`, {
+      params: { timeframe, store }
+    });
+    return response.data;
+  },
+
+  // 6. Dashboard Sales Trend
+  async getSalesTrend(days = 90) {
+    const response = await api.get('/dashboard/sales-trend', {
+      params: { days }
+    });
+    return response.data;
   }
 };

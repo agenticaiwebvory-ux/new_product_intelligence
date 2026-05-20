@@ -5,7 +5,6 @@ import ControlPanel from './components/ControlPanel'
 import ScraperDashboard from './components/ScraperDashboard'
 import MerchandisingReport from './components/MerchandisingReport'
 import DashboardHome from './components/DashboardHome'
-import ProductsPage from './components/ProductsPage'
 import StoresPage from './components/StoresPage'
 import TagsPage from './components/TagsPage'
 import ChangesPage from './components/ChangesPage'
@@ -97,7 +96,6 @@ function App() {
         )}
         {/* New sidebar sections */}
         {activeView === 'home' && <DashboardHome />}
-        {activeView === 'products' && <ProductsPage />}
         {activeView === 'stores' && <StoresPage />}
         {activeView === 'tags' && <TagsPage />}
         {activeView === 'changes' && <ChangesPage />}

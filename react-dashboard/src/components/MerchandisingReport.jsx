@@ -9,7 +9,7 @@ import AuditDetailsModal from './AuditDetailsModal'
 import Header from './Header'
 import ConfirmationDialog from './common/ConfirmationDialog'
 import KpiGrid from './merchandising/KpiGrid'
-import ExpandedRowGraphs from './merchandising/ExpandedRowGraphs'
+import ProductAnalyticsPanel from './merchandising/ProductAnalyticsPanel'
 import ProductDetailContent from './merchandising/ProductDetailContent'
 import WorkspaceToolbar, { DEFAULT_CATALOG_VENDOR } from './product-workspace/WorkspaceToolbar'
 import { apiService } from '../services/api'
@@ -827,11 +827,7 @@ const MerchandisingReport = ({ globalStats }) => {
                 {expandedRows.has(p.internal_id) && (
                   <tr className="bg-slate-50">
                     <td colSpan={7} className="p-4">
-                      <ExpandedRowGraphs
-                        p={p}
-                        activeTimeframe={activeTimeframe}
-                        setActiveTimeframe={setActiveTimeframe}
-                      />
+                      <ProductAnalyticsPanel p={p} />
                     </td>
                   </tr>
                 )}

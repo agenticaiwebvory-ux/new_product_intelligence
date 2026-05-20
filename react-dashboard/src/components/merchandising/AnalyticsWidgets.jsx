@@ -1,4 +1,4 @@
-import { TrendingUp, Palette, Warehouse, AlertTriangle, Store } from 'lucide-react'
+import { TrendingUp, Palette, Warehouse, AlertTriangle, RefreshCw, Store } from 'lucide-react'
 
 function TopSellerCard({ title, items, icon, accent }) {
   if (!items || items.length === 0) return null
@@ -74,6 +74,7 @@ export default function AnalyticsWidgets({ analytics }) {
     top_colors = [],
     highest_inventory = [],
     lowest_stock = [],
+    most_returned = [],
   } = analytics
 
   const STORE_LABELS = { TDO: 'The Dress Outlet', WDO: 'Wholesale D.O.', KOS: 'Kosmed', IM: 'InStock' }
@@ -107,8 +108,29 @@ export default function AnalyticsWidgets({ analytics }) {
         />
       </div>
 
-      {/* Inventory & Colors Row */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      {/* Inventory, Returns & Colors Row */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        {/* Most Returned */}
+        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+          <div className="flex items-center gap-2 mb-3">
+            <div className="p-1.5 rounded-lg bg-orange-50">
+              <RefreshCw size={14} className="text-orange-600" />
+            </div>
+            <span className="text-[0.7rem] font-black text-slate-500 uppercase tracking-wider">Most Returned</span>
+          </div>
+          <div className="space-y-1.5">
+            {most_returned.slice(0, 5).map((item) => (
+              <div key={item.style} className="flex items-center justify-between text-[0.75rem]">
+                <span className="font-bold text-slate-700 truncate max-w-[140px]">{item.style}</span>
+                <span className="font-black text-orange-700 tabular-nums">{item.returns.toLocaleString()}</span>
+              </div>
+            ))}
+            {most_returned.length === 0 && (
+              <div className="text-[0.7rem] text-slate-300 font-semibold">No data</div>
+            )}
+          </div>
+        </div>
+
         {/* Highest Inventory */}
         <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
           <div className="flex items-center gap-2 mb-3">

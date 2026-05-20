@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Settings, ExternalLink, Globe, Menu, ChevronLeft, Search, ShoppingBag, Home, Package, Store, Tag, GitCommitHorizontal, LayoutDashboard, Power } from 'lucide-react'
+import { Settings, ExternalLink, Globe, Menu, ChevronLeft, Search, ShoppingBag, Home, Store, Tag, GitCommitHorizontal, LayoutDashboard, Power } from 'lucide-react'
 import { useAppDispatch, useAppSelector } from '../app/hooks'
 import { fetchStoreConnections } from '../features/stores/storesSlice'
 
@@ -73,16 +73,6 @@ const Sidebar = ({ activeView, setActiveView, user, onLogout, sidebarLinks = [],
         >
           <LayoutDashboard size={22} className="shrink-0" />
           {!isCollapsed && <span>Dashboard</span>}
-        </button>
-
-        {/* Products */}
-        <button
-          onClick={() => setActiveView('products')}
-          title="Products"
-          className={`${navBtnBase} ${activeView === 'products' ? navBtnActive : navBtnInactive} ${isCollapsed ? 'justify-center' : 'justify-start'}`}
-        >
-          <Package size={22} className="shrink-0" />
-          {!isCollapsed && <span>Products</span>}
         </button>
 
         {/* Stores */}

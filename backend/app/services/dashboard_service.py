@@ -1036,6 +1036,25 @@ class DashboardService:
         low_rows.sort(key=lambda x: x['inventory'])
         result["lowest_stock"] = low_rows[:10]
 
+        # ── 6. Most returned ──
+        from ..core.database import MerchSessionLocal
+        from ..models.merchandising import MerchProduct
+        merch_session = MerchSessionLocal()
+        try:
+            most_returned = (
+                merch_session.query(
+                    MerchAnalytics.style_no,
+                    MerchAnalytics.return_90,
+                )
+                .filter(MerchAnalytics.return_90 > 0)
+                .order_by(desc(MerchAnalytics.return_90))
+                .limit(10)
+                .all()
+            )
+            result["most_returned"] = [{"style": r.style_no, "returns": int(r.return_90)} for r in most_returned]
+        finally:
+            merch_session.close()
+
         return result
 
     # _parse_tags_categorized removed — use parse_tags_categorized() from app.utils.tag_utils instead.
