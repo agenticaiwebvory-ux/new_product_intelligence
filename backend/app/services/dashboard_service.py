@@ -81,7 +81,7 @@ class DashboardService:
             _miss(model.im_product_id),
         )
 
-    def get_aggregated_stats(self, vendor: str = None, store: str = None, search: str = None, tags: str = None, date_from: str = None, date_to: str = None):
+    def get_aggregated_stats(self, vendor: str = None, store: str = None, search: str = None, tags: str = None, status: str = None, date_from: str = None, date_to: str = None):
         """
         Aggregates catalog stats across both product tables.
         """
@@ -111,11 +111,16 @@ class DashboardService:
             st = f"%{tags}%"
             tags_filter.append(models.Product.tags.ilike(st))
 
+        # Build status filter
+        status_filter = []
+        if status:
+            status_filter.append(models.Product.status == status)
+
         # 1. Main catalog (InStockDashboard) — excludes TDO_VENDOR_NAME rows to prevent duplicates
         main_base = [
             models.InStockDashboard.vendor != TDO_VENDOR_NAME,
             or_(models.Product.tags == None, ~models.Product.tags.ilike("%discontinued%")),
-        ] + store_filter + tags_filter
+        ] + store_filter + tags_filter + status_filter
         mc, mi, mo, mt, mw, mk, mim = self._build_stat_block(
             models.InStockDashboard, main_base, vendor, search, date_from, date_to, is_tdo_table=False
         )
@@ -131,7 +136,7 @@ class DashboardService:
         tdo_base = [
             models.TheDressOutlet.vendor == TDO_VENDOR_NAME,
             or_(models.Product.tags == None, ~models.Product.tags.ilike("%discontinued%")),
-        ] + tdo_store_filter + tags_filter
+        ] + tdo_store_filter + tags_filter + status_filter
         tc, ti, to_, tt, tw, tk, tim = self._build_stat_block(
             models.TheDressOutlet, tdo_base, vendor, search, date_from, date_to, is_tdo_table=True
         )
@@ -174,6 +179,8 @@ class DashboardService:
             if tags:
                 tst = f"%{tags}%"
                 sold_q = sold_q.filter(models.Product.tags.ilike(tst))
+            if status:
+                sold_q = sold_q.filter(models.Product.status == status)
             total_sold = sold_q.scalar() or 0
         except Exception as e:
             self.logger.warning(f"Total sold query failed: {e}")
@@ -188,10 +195,10 @@ class DashboardService:
             "im_missing": mim + tim,
             "total_sold": total_sold,
             "store_health": health,
-            "vendors": self.get_designers_with_counts(store=store, tags=tags),
+            "vendors": self.get_designers_with_counts(store=store, tags=tags, status=status),
         }
 
-    def get_designers_with_counts(self, store=None, tags=None):
+    def get_designers_with_counts(self, store=None, tags=None, status=None):
         vendors_dict = {}
 
         # Filter for InStockDashboard (exclude TDO vendor)
@@ -210,6 +217,8 @@ class DashboardService:
         ).filter(*main_filter)
         if tags:
             main_q = main_q.filter(models.Product.tags.ilike(f"%{tags}%"))
+        if status:
+            main_q = main_q.filter(models.Product.status == status)
         counts = main_q.group_by(models.InStockDashboard.vendor).all()
 
         for name, count in counts:
@@ -229,6 +238,8 @@ class DashboardService:
         ).filter(*tdo_filter)
         if tags:
             tdo_q = tdo_q.filter(models.Product.tags.ilike(f"%{tags}%"))
+        if status:
+            tdo_q = tdo_q.filter(models.Product.status == status)
         tdo_count = tdo_q.count()
         if tdo_count > 0:
             vendors_dict[TDO_VENDOR_NAME] = tdo_count
@@ -238,12 +249,12 @@ class DashboardService:
             results.append({"id": name, "name": name, "style_count": count})
         return results
 
-    def get_unified_products(self, vendor=None, page=1, limit=50, search=None, date_from=None, date_to=None):
+    def get_unified_products(self, vendor=None, page=1, limit=50, search=None, status=None, date_from=None, date_to=None):
         start_time = time.time()
         self.logger.info(f"Fetching unified products (Page: {page}, Limit: {limit}, Search: {search}, DateFrom: {date_from}, DateTo: {date_to}) for vendor: {vendor}")
         # 1. Fetch data via CatalogService (Source of Truth: in_stock_dashboard)
         unified_data, master_product_map, image_map, stores, total_count = self.catalog_service.get_master_catalog(
-            vendor, page, limit, search, date_from=date_from, date_to=date_to
+            vendor, page, limit, search, date_from=date_from, date_to=date_to, status=status
         )
         self.logger.info(f"Catalog fetched: {len(unified_data)} rows in {time.time() - start_time:.2f}s")
 

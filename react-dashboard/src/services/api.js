@@ -102,7 +102,8 @@ export const apiService = {
         search: search || undefined,
         date_from: dateFrom || undefined,
         date_to: dateTo || undefined,
-        tags: extraParams.tagSearch || undefined
+        tags: extraParams.tagSearch || undefined,
+        status: extraParams.status && extraParams.status !== 'all' ? extraParams.status : undefined
       }
     });
     return response.data;
@@ -116,7 +117,8 @@ export const apiService = {
         search: search || undefined,
         date_from: dateFrom || undefined,
         date_to: dateTo || undefined,
-        tags: extraParams.tagSearch || undefined
+        tags: extraParams.tagSearch || undefined,
+        status: extraParams.status && extraParams.status !== 'all' ? extraParams.status : undefined
       }
     });
     return response.data;

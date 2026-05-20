@@ -96,6 +96,7 @@ const MerchandisingReport = ({ globalStats }) => {
   const [tagSearch, setTagSearch] = useState('')
   const [sortMetric, setSortMetric] = useState('none')
   const [sortOrder, setSortOrder] = useState('highest')
+  const [statusFilter, setStatusFilter] = useState('all')
   const [confirmationModal, setConfirmationModal] = useState(null)
   const [isSyncingPrice, setIsSyncingPrice] = useState(false)
   const [isSyncingTags, setIsSyncingTags] = useState(false)
@@ -130,7 +131,7 @@ const MerchandisingReport = ({ globalStats }) => {
     if (!silent) setLoading(true)
     try {
         const vendorQuery = currentVendor === 'ALL' ? '' : currentVendor
-        const extraParams = { tagSearch, store: activeStoreFilter }
+        const extraParams = { tagSearch, store: activeStoreFilter, status: statusFilter }
         const [prodRes, statsRes] = await Promise.all([
           apiService.getProducts(vendorQuery, page, itemsPerPage, auditSearch, dateFrom, dateTo, extraParams),
           apiService.getDashboardStats(vendorQuery, auditSearch, dateFrom, dateTo, extraParams)
@@ -206,11 +207,11 @@ const MerchandisingReport = ({ globalStats }) => {
     } finally {
       if (!silent && fetchSequenceRef.current === requestId) setLoading(false)
     }
-  }, [activeVendor, currentPage, itemsPerPage, auditSearch, getDateRange, tagSearch, activeStoreFilter])
+  }, [activeVendor, currentPage, itemsPerPage, auditSearch, getDateRange, tagSearch, activeStoreFilter, statusFilter])
 
   useEffect(() => {
     const { dateFrom, dateTo } = getDateRange()
-    const filterKey = [activeVendor, auditSearch, activeStoreFilter, datePreset, dateFrom, dateTo, tagSearch].join('|')
+    const filterKey = [activeVendor, auditSearch, activeStoreFilter, datePreset, dateFrom, dateTo, tagSearch, statusFilter].join('|')
     const filtersChanged = filterKeyRef.current !== filterKey
     filterKeyRef.current = filterKey
     if (filtersChanged && currentPage !== 1) {
@@ -614,6 +615,8 @@ const MerchandisingReport = ({ globalStats }) => {
         setSortMetric={setSortMetric}
         sortOrder={sortOrder}
         setSortOrder={setSortOrder}
+        statusFilter={statusFilter}
+        setStatusFilter={setStatusFilter}
       />
 
       {/* Table */}

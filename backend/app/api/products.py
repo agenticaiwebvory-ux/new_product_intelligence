@@ -33,12 +33,13 @@ async def get_products(
     page: int = 1,
     limit: int = 50,
     search: Optional[str] = None,
+    status: Optional[str] = None,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
     db: Session = Depends(get_db),
     response: Response = None
 ):
-    cache_key = f"audit:list:v2:{vendor}:{page}:{limit}:{search}:{date_from}:{date_to}"
+    cache_key = f"audit:list:v2:{vendor}:{page}:{limit}:{search}:{status}:{date_from}:{date_to}"
     try:
         # 1. Try Cache
         cached = await get_cache(cache_key)
@@ -51,7 +52,7 @@ async def get_products(
         service = DashboardService(db)
         
         result = await anyio.to_thread.run_sync(
-            lambda: service.get_unified_products(vendor=vendor, page=page, limit=limit, search=search, date_from=date_from, date_to=date_to)
+            lambda: service.get_unified_products(vendor=vendor, page=page, limit=limit, search=search, status=status, date_from=date_from, date_to=date_to)
         )
         
         await set_cache(cache_key, result, ttl=3600)
@@ -64,7 +65,7 @@ async def get_products(
         from ..services.dashboard_service import DashboardService
         service = DashboardService(db)
         return await anyio.to_thread.run_sync(
-            lambda: service.get_unified_products(vendor=vendor, page=page, limit=limit, search=search, date_from=date_from, date_to=date_to)
+            lambda: service.get_unified_products(vendor=vendor, page=page, limit=limit, search=search, status=status, date_from=date_from, date_to=date_to)
         )
 
 @router.get("/changes")

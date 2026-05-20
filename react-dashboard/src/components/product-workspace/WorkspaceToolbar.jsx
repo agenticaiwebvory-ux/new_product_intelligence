@@ -77,6 +77,8 @@ const WorkspaceToolbar = ({
   setSortMetric,
   sortOrder,
   setSortOrder,
+  statusFilter,
+  setStatusFilter,
 }) => {
   const storeKeys = useAppSelector((state) => Object.keys(state.stores.connections))
 
@@ -90,6 +92,24 @@ const WorkspaceToolbar = ({
             <option key={store} value={store.toUpperCase()}>{store.toUpperCase()} Store</option>
           ))}
         </SelectControl>
+
+        {/* Status filter */}
+        <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg h-10 shadow-sm">
+          <div className="flex items-center gap-1.5 pl-3 pr-1">
+            <span className="text-[0.65rem] font-black text-slate-400 uppercase tracking-wider">Status</span>
+          </div>
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="h-10 appearance-none bg-transparent pr-7 text-[0.78rem] font-extrabold text-slate-700 outline-none cursor-pointer"
+          >
+            <option value="all">All</option>
+            <option value="ACTIVE">ACTIVE</option>
+            <option value="DRAFT">DRAFT</option>
+            <option value="ARCHIVED">ARCHIVED</option>
+          </select>
+          <ChevronDown size={12} className="pointer-events-none -ml-4 text-slate-400" />
+        </div>
 
         <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg h-10 shadow-sm">
           <div className="flex items-center gap-1.5 pl-3 pr-1">
