@@ -1,85 +1,66 @@
 import { useState } from 'react'
-import { TrendingUp, Eye, ChevronDown, BarChart3 } from 'lucide-react'
+import { TrendingUp, ChevronDown, BarChart3 } from 'lucide-react'
 
-function BarChart({ data, label, color, maxValue, activePeriod }) {
-  if (!data || data.length === 0) return null
-  const max = maxValue || Math.max(...data.map(d => d.value), 1)
+function Bar({ label, bars, max, active }) {
+  const m = Math.max(max, 1)
   return (
-    <div className="space-y-2">
-      <div className="text-[0.65rem] font-extrabold text-slate-500 uppercase tracking-wider">{label}</div>
-      <div className="space-y-1.5">
-        {data.map(d => {
-          const pct = (d.value / max) * 100
-          const isActive = d.period === activePeriod
-          return (
-            <div key={d.period} className="flex items-center gap-3">
-              <span className={`text-[0.65rem] font-black w-[32px] text-right shrink-0 ${isActive ? 'text-slate-900' : 'text-slate-400'}`}>
-                {d.period}d
-              </span>
-              <div className="flex-1 h-5 bg-slate-100 rounded-full overflow-hidden relative">
-                <div
-                  className={`h-full rounded-full transition-all duration-500 ${isActive ? color.active : color.base}`}
-                  style={{ width: `${Math.max(pct, 2)}%` }}
-                />
-              </div>
-              <span className={`text-[0.75rem] font-black w-[60px] text-right tabular-nums shrink-0 ${isActive ? 'text-slate-900' : 'text-slate-500'}`}>
-                {d.value.toLocaleString()}
-              </span>
+    <div className="space-y-1.5">
+      <div className="text-[0.65rem] font-black text-slate-500 uppercase tracking-wider">{label}</div>
+      {bars.map(b => {
+        const pct = (b.v / m) * 100
+        const on = b.p === active
+        return (
+          <div key={b.p} className="flex items-center gap-2">
+            <span className={`text-[0.6rem] font-black w-[28px] text-right shrink-0 ${on ? 'text-slate-900' : 'text-slate-400'}`}>{b.p}d</span>
+            <div className="flex-1 h-4 bg-slate-100 rounded-full overflow-hidden">
+              <div className={`h-full rounded-full transition-all ${on ? b.ac : b.bc}`} style={{ width: `${Math.max(pct, 2)}%` }} />
             </div>
-          )
-        })}
-      </div>
+            <span className={`text-[0.7rem] font-black w-[52px] text-right tabular-nums shrink-0 ${on ? 'text-slate-900' : 'text-slate-500'}`}>{b.v.toLocaleString()}</span>
+          </div>
+        )
+      })}
     </div>
   )
 }
 
 export default function ExpandedRowGraphs({ p, activeTimeframe, setActiveTimeframe }) {
-  const [selectedPeriod, setSelectedPeriod] = useState(activeTimeframe || '90')
+  const [period, setPeriod] = useState(activeTimeframe || '90')
 
-  const sellData = [
-    { period: '7', value: p.sell_thru_details?.days_7 || 0 },
-    { period: '30', value: p.sell_thru_details?.days_30 || 0 },
-    { period: '60', value: p.sell_thru_details?.days_60 || 0 },
-    { period: '90', value: p.sell_thru_details?.days_90 || 0 },
+  const sold = [
+    { p: '7', v: p.sell_thru_details?.days_7 || 0, ac: 'bg-emerald-500', bc: 'bg-emerald-200' },
+    { p: '30', v: p.sell_thru_details?.days_30 || 0, ac: 'bg-emerald-500', bc: 'bg-emerald-200' },
+    { p: '60', v: p.sell_thru_details?.days_60 || 0, ac: 'bg-emerald-500', bc: 'bg-emerald-200' },
+    { p: '90', v: p.sell_thru_details?.days_90 || 0, ac: 'bg-emerald-500', bc: 'bg-emerald-200' },
   ]
-  const viewData = [
-    { period: '7', value: p.pageviews_details?.days_7 || 0 },
-    { period: '30', value: p.pageviews_details?.days_30 || 0 },
-    { period: '60', value: p.pageviews_details?.days_60 || 0 },
-    { period: '90', value: p.pageviews_details?.days_90 || 0 },
+  const views = [
+    { p: '7', v: p.pageviews_details?.days_7 || 0, ac: 'bg-blue-500', bc: 'bg-blue-200' },
+    { p: '30', v: p.pageviews_details?.days_30 || 0, ac: 'bg-blue-500', bc: 'bg-blue-200' },
+    { p: '60', v: p.pageviews_details?.days_60 || 0, ac: 'bg-blue-500', bc: 'bg-blue-200' },
+    { p: '90', v: p.pageviews_details?.days_90 || 0, ac: 'bg-blue-500', bc: 'bg-blue-200' },
   ]
-  const returnData = [
-    { period: '30', value: p.returns_details?.days_30 || 0 },
-    { period: '60', value: p.returns_details?.days_60 || 0 },
-    { period: '90', value: p.returns_details?.days_90 || 0 },
+  const returns = [
+    { p: '30', v: p.returns_details?.days_30 || 0, ac: 'bg-rose-500', bc: 'bg-rose-200' },
+    { p: '60', v: p.returns_details?.days_60 || 0, ac: 'bg-rose-500', bc: 'bg-rose-200' },
+    { p: '90', v: p.returns_details?.days_90 || 0, ac: 'bg-rose-500', bc: 'bg-rose-200' },
   ]
 
-  const maxSold = Math.max(...sellData.map(d => d.value), 1)
-  const maxViews = Math.max(...viewData.map(d => d.value), 1)
-  const maxReturns = Math.max(...returnData.map(d => d.value), 1)
+  const maxS = Math.max(...sold.map(b => b.v), 1)
+  const maxV = Math.max(...views.map(b => b.v), 1)
+  const maxR = Math.max(...returns.map(b => b.v), 1)
 
-  const handlePeriodChange = (val) => {
-    setSelectedPeriod(val)
-    setActiveTimeframe(val)
-  }
+  const showFallback = maxS <= 1 && maxV <= 1 && maxR <= 1
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 p-4">
-      {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
-          <div className="p-1.5 rounded-lg bg-indigo-50">
-            <BarChart3 size={14} className="text-indigo-600" />
-          </div>
+          <div className="p-1.5 rounded-lg bg-indigo-50"><BarChart3 size={14} className="text-indigo-600" /></div>
           <span className="text-[0.7rem] font-black text-slate-600 uppercase tracking-wider">Sales & Views Analytics</span>
         </div>
         <div className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200 shadow-sm">
           <TrendingUp size={12} className="text-brand" />
-          <select
-            value={selectedPeriod}
-            onChange={(e) => handlePeriodChange(e.target.value)}
-            className="bg-transparent border-none text-[0.75rem] font-black outline-none cursor-pointer appearance-none text-slate-900 pr-4"
-          >
+          <select value={period} onChange={e => { setPeriod(e.target.value); setActiveTimeframe(e.target.value) }}
+            className="bg-transparent border-none text-[0.75rem] font-black outline-none cursor-pointer appearance-none text-slate-900 pr-4">
             <option value="7">7 Days</option>
             <option value="30">30 Days</option>
             <option value="60">60 Days</option>
@@ -89,45 +70,29 @@ export default function ExpandedRowGraphs({ p, activeTimeframe, setActiveTimefra
         </div>
       </div>
 
-      {/* Image + Charts in 2-col layout */}
-      <div className="grid gap-6" style={{ gridTemplateColumns: '140px 1fr' }}>
-        {/* Left: Image */}
-        <div className="text-center">
-          <div className="rounded-xl shadow-sm overflow-hidden bg-slate-100 aspect-[2/3] border border-slate-200">
-            <img
-              src={p.main_image}
-              alt=""
-              loading="lazy"
-              className="w-full transition-opacity duration-500 opacity-0"
-              onLoad={(e) => e.target.classList.remove('opacity-0')}
-            />
+      <div className="flex items-start gap-4">
+        <div className="text-center w-[120px] shrink-0">
+          <div className="rounded-lg overflow-hidden bg-slate-100 aspect-[2/3] border border-slate-200">
+            <img src={p.main_image} alt="" loading="lazy" className="w-full opacity-0 transition-opacity" onLoad={e => e.target.classList.remove('opacity-0')} />
           </div>
-          <div className="mt-2 text-[0.6rem] font-extrabold text-slate-400">{p.style}</div>
+          <div className="mt-1.5 text-[0.55rem] font-extrabold text-slate-400">{p.style}</div>
         </div>
 
-        {/* Right: Charts */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-          <BarChart
-            data={sellData}
-            label="Sold"
-            color={{ active: 'bg-emerald-500', base: 'bg-emerald-200' }}
-            maxValue={maxSold}
-            activePeriod={selectedPeriod}
-          />
-          <BarChart
-            data={viewData}
-            label="Views"
-            color={{ active: 'bg-blue-500', base: 'bg-blue-200' }}
-            maxValue={maxViews}
-            activePeriod={selectedPeriod}
-          />
-          <BarChart
-            data={returnData}
-            label="Returns"
-            color={{ active: 'bg-rose-500', base: 'bg-rose-200' }}
-            maxValue={maxReturns}
-            activePeriod={selectedPeriod}
-          />
+        <div className="flex-1 grid grid-cols-3 gap-4">
+          {showFallback ? (
+            <div className="col-span-3 flex items-center justify-center h-[140px] bg-slate-50 rounded-xl border border-dashed border-slate-200">
+              <div className="text-center">
+                <BarChart3 size={22} className="mx-auto text-slate-300 mb-1.5" />
+                <div className="text-[0.7rem] font-semibold text-slate-400">No analytics data</div>
+              </div>
+            </div>
+          ) : (
+            <>
+              <Bar label="Sold" bars={sold} max={maxS} active={period} />
+              <Bar label="Views" bars={views} max={maxV} active={period} />
+              <Bar label="Returns" bars={returns} max={maxR} active={period} />
+            </>
+          )}
         </div>
       </div>
     </div>

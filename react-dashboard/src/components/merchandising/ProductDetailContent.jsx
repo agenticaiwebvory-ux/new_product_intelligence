@@ -34,6 +34,9 @@ export default function ProductDetailContent({
   const activeVariants = Object.keys(activeColorVars).length > 0
     ? Object.entries(activeColorVars[activeColor] || {}).map(([size, inv]) => ({ size, inventory: inv, color: activeColor }))
     : activeStoreVariants.filter(v => !activeColor || v.color === activeColor)
+  const bestSizeForColor = p.sales_breakdown?.[activeColor]
+    ? Object.entries(p.sales_breakdown[activeColor]).sort(([,a], [,b]) => b - a)[0]?.[0]
+    : null
   const displayTotalStock = activeStore.inventory ?? 0
   const displayPrice = activeStoreKey === 'TDO' ? (p.retail_price ?? activeStore.price) : (p.wholesale_price ?? activeStore.price)
   const activeAdminLink = p.admin_links?.[activeStoreKey.toLowerCase()]
@@ -342,8 +345,7 @@ export default function ProductDetailContent({
               </div>
             )}
             {activeVariants.map(v => {
-              const bestSizeName = p.most_sold_size ? p.most_sold_size.split('(')[0].trim() : '';
-              const isBestSize = bestSizeName && v.size.toString() === bestSizeName;
+              const isBestSize = bestSizeForColor && v.size.toString() === bestSizeForColor;
               return (
                 <div key={v.size} className="flex-1 min-w-[85px] border-r border-slate-200 flex flex-col relative">
                   <div className="bg-slate-50 py-2.5 text-[0.75rem] font-black text-center border-b border-slate-200 text-slate-500 uppercase">
