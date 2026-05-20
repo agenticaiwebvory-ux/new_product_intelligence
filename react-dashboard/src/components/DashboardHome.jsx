@@ -5,6 +5,8 @@ import { fetchStoreConnections } from '../features/stores/storesSlice'
 import { STORE_LABELS } from '../constants/dashboard'
 import { Package, AlertTriangle, Store, RefreshCw, TrendingUp, ShoppingCart, Eye, BarChart3, CheckCircle, XCircle } from 'lucide-react'
 import { formatCompactNumber } from '../utils/format'
+import AnalyticsWidgets from './merchandising/AnalyticsWidgets'
+import { apiService } from '../services/api'
 
 const KpiCard = ({ icon: Icon, label, value, sub, color }) => (
   <div className="bg-white rounded-xl border border-slate-200 p-5 flex items-start gap-4 transition-all hover:shadow-md hover:border-slate-300">
@@ -24,12 +26,16 @@ export default function DashboardHome() {
   const { stats, status, error } = useAppSelector((s) => s.dashboard)
   const connections = useAppSelector((s) => s.stores.connections)
   const [loading, setLoading] = useState(true)
+  const [analytics, setAnalytics] = useState(null)
 
   useEffect(() => {
     Promise.all([
       dispatch(fetchDashboardStats()),
       dispatch(fetchStoreConnections()),
-    ]).finally(() => setLoading(false))
+      apiService.getDashboardAnalytics().catch(() => null),
+    ]).then(([, , analyticsRes]) => {
+      if (analyticsRes) setAnalytics(analyticsRes)
+    }).finally(() => setLoading(false))
   }, [dispatch])
 
   if (loading) {
@@ -78,6 +84,9 @@ export default function DashboardHome() {
           <KpiCard icon={BarChart3} label="Vendors" value={formatCompactNumber(s?.vendors?.length || 0)} sub="Active brands" color={{ bg: 'bg-cyan-50', text: 'text-cyan-600' }} />
         </div>
       )}
+
+      {/* Insights at a Glance */}
+      {analytics && <AnalyticsWidgets analytics={analytics} />}
 
       {/* Store Health */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

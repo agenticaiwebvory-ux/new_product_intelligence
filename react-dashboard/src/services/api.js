@@ -179,8 +179,11 @@ export const apiService = {
     return response.data;
   },
 
-  async revertUpdate(sku, type = 'all') {
-    const response = await api.post(`/products/revert/${sku}?type=${type}`);
+  async revertUpdate(sku, type = 'all', store = null) {
+    const url = store 
+      ? `/products/revert/${sku}?type=${type}&store=${store}` 
+      : `/products/revert/${sku}?type=${type}`;
+    const response = await api.post(url);
     return response.data;
   },
 

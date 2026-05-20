@@ -113,6 +113,35 @@ class ProductTool:
         self.db.commit()
 
         if local_only:
+            # Sync staged price to Product cache so get_unified_products returns correct store_prices
+            if retail_price is not None or wholesale_price is not None:
+                for row in [dashboard_row, source_row]:
+                    if not row: continue
+                    if retail_price is not None and row.tdo_product_id:
+                        tdo_cache = self.db.query(Product).get(row.tdo_product_id)
+                        if tdo_cache:
+                            tdo_cache.price = float(retail_price)
+                    if wholesale_price is not None and row.wdo_product_id:
+                        wdo_cache = self.db.query(Product).get(row.wdo_product_id)
+                        if wdo_cache:
+                            wdo_cache.price = float(wholesale_price)
+                self.db.commit()
+
+            # Create backup for local-only edits so they appear on ChangesPage
+            if create_backup:
+                tdo_pid = target_row.tdo_product_id
+                if tdo_pid:
+                    tdo_live = self.db.query(Product).get(tdo_pid)
+                    if tdo_live and target_row.backup_retail_price is None:
+                        target_row.backup_retail_price = tdo_live.price
+                wdo_pid = target_row.wdo_product_id
+                if wdo_pid:
+                    wdo_live = self.db.query(Product).get(wdo_pid)
+                    if wdo_live and target_row.backup_wholesale_price is None:
+                        target_row.backup_wholesale_price = wdo_live.price
+                target_row.backup_created_at = datetime.utcnow()
+                self.db.commit()
+
             return {
                 "status": "success",
                 "message": "Saved to local drafts. Sync required to Shopify.",

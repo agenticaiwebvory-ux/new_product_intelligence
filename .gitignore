@@ -20,7 +20,7 @@ __pycache__/
 *$py.class
 *.pyo
 *.pyd
-
+./original
 # C extensions
 *.so
 
@@ -31,6 +31,7 @@ ENV/
 env/
 pyvenv.cfg
 .python-version
+original/
 
 # Testing & Coverage
 .pytest_cache/

@@ -85,19 +85,34 @@ async def acquire_lock(lock_name: str, acquire_timeout: int = 10, lock_timeout: 
     - lock_name: The name of the lock key.
     - acquire_timeout: How long to wait to get the lock (seconds).
     - lock_timeout: How long the lock remains valid (seconds).
+    Returns True if lock acquired or if Redis unavailable (bypass).
     """
-    import asyncio
-    import time
-    
-    end = time.time() + acquire_timeout
-    while time.time() < end:
-        if await redis_client.set(f"lock:{lock_name}", "locked", ex=lock_timeout, nx=True):
+    try:
+        import asyncio
+        locked = await asyncio.wait_for(
+            redis_client.set(f"lock:{lock_name}", "locked", ex=lock_timeout, nx=True),
+            timeout=1.0
+        )
+        if locked:
             return True
-        await asyncio.sleep(0.1)
-    return False
+        # Lock held by another process — wait briefly then give up
+        await asyncio.sleep(0.5)
+        return False
+    except asyncio.TimeoutError:
+        logger.warning(f"Redis timeout in acquire_lock for {lock_name}. Bypassing lock.")
+        return True
+    except Exception as e:
+        logger.warning(f"Redis error in acquire_lock for {lock_name}. Bypassing lock: {e}")
+        return True
 
 async def release_lock(lock_name: str):
     """Release a distributed lock."""
-    await redis_client.delete(f"lock:{lock_name}")
+    try:
+        import asyncio
+        await asyncio.wait_for(redis_client.delete(f"lock:{lock_name}"), timeout=1.0)
+    except asyncio.TimeoutError:
+        logger.warning(f"Redis timeout in release_lock for {lock_name}. Skipping.")
+    except Exception as e:
+        logger.warning(f"Redis error in release_lock for {lock_name}: {e}")
 
 __all__ = ["redis_client", "set_cache", "get_cache", "delete_cache", "clear_cache_pattern", "acquire_lock", "release_lock"]

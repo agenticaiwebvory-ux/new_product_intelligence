@@ -9,7 +9,6 @@ import AuditDetailsModal from './AuditDetailsModal'
 import Header from './Header'
 import ConfirmationDialog from './common/ConfirmationDialog'
 import KpiGrid from './merchandising/KpiGrid'
-import AnalyticsWidgets from './merchandising/AnalyticsWidgets'
 import ExpandedRowGraphs from './merchandising/ExpandedRowGraphs'
 import ProductDetailContent from './merchandising/ProductDetailContent'
 import WorkspaceToolbar, { DEFAULT_CATALOG_VENDOR } from './product-workspace/WorkspaceToolbar'
@@ -40,6 +39,12 @@ const ANALYTICS_FIELDS = [
   'sell_thru',
   'most_sold_color',
   'most_sold_size',
+  'retail_price',
+  'wholesale_price',
+  'store_prices',
+  'backup_retail_price',
+  'backup_wholesale_price',
+  'sync_status',
 ]
 
 const mergePreservedAnalytics = (nextProducts, previousProducts) =>
@@ -103,7 +108,6 @@ const MerchandisingReport = ({ globalStats }) => {
   const [statusFilter, setStatusFilter] = useState('all')
   const [confirmationModal, setConfirmationModal] = useState(null)
   const [isSyncingPrice, setIsSyncingPrice] = useState(false)
-  const [analyticsInsights, setAnalyticsInsights] = useState(null)
   const [isSyncingTags, setIsSyncingTags] = useState(false)
   const [isReverting, setIsReverting] = useState(false)
   const fetchSequenceRef = useRef(0)
@@ -208,7 +212,6 @@ const MerchandisingReport = ({ globalStats }) => {
           vendors: raw.vendors,
           store_health: raw.store_health,
         })
-        if (analyticsRes) setAnalyticsInsights(analyticsRes)
     } catch (err) {
       console.error('API Error:', err)
     } finally {
@@ -391,20 +394,30 @@ const MerchandisingReport = ({ globalStats }) => {
         setIsSyncingPrice(true);
         setPushingStyle(product.sku);
         try {
+          const linkedStores = product.stores?.split(',').map(s => s.trim()) || ['TDO']
+          console.log('[pushPriceToShopify] Submitting price push to Shopify API:', { sku: product.sku, stores: linkedStores, retail_price: product.retail_price, wholesale_price: product.wholesale_price });
+          
           const res = await apiService.pushProductUpdate(product.sku, {
-            force_shopify: true,
             retail_price: product.retail_price,
-            wholesale_price: product.wholesale_price
-          });
-          if (res.status === 'success') {
+            wholesale_price: product.wholesale_price,
+            stores: linkedStores
+          }, false);
+          
+          console.log('[pushPriceToShopify] API push response:', res);
+          
+          if (res.status === 'success' || res.status === 'partial_success') {
             toast.success('Price pushed to Shopify!');
             setProducts(prev => prev.map(p => p.sku === product.sku ? { ...p, sync_status: { ...(p.sync_status || {}), price: false, wholesale: false }, has_pushed_price: true } : p));
             setConfirmationModal(null);
           } else {
-            toast.error(res.message || 'Push failed');
+            const detailMsg = res.message || (res.details ? JSON.stringify(res.details) : 'Push failed');
+            console.warn('[pushPriceToShopify] Shopify sync returned non-success:', res);
+            toast.error('Sync failed: ' + detailMsg);
           }
         } catch (err) {
-          toast.error('Push failed: ' + (err.response?.data?.detail || err.message));
+          console.error('[pushPriceToShopify] Shopify price push API call failed:', err);
+          const errorMsg = err.response?.data?.detail || err.message || 'Unknown network error';
+          toast.error('Push failed: ' + errorMsg);
         } finally {
           setIsSyncingPrice(false);
           setPushingStyle(null);
@@ -456,7 +469,7 @@ const MerchandisingReport = ({ globalStats }) => {
     });
   }
 
-  const handleRevertPrice = async (product) => {
+  const handleRevertPrice = async (product, storeKey = null) => {
     setConfirmationModal({
       title: 'Revert Price Changes',
       message: `Are you sure you want to revert the price for ${product.sku} to its last live version?`,
@@ -465,7 +478,7 @@ const MerchandisingReport = ({ globalStats }) => {
       onConfirm: async () => {
         setIsReverting(true);
         try {
-          await apiService.revertUpdate(product.sku, 'price');
+          await apiService.revertUpdate(product.sku, 'price', storeKey);
           toast.success('Price reverted!');
           fetchData(true);
           setConfirmationModal(null);
@@ -480,7 +493,7 @@ const MerchandisingReport = ({ globalStats }) => {
 
   const savePrice = async () => {
     if (!editingPrice) return
-    const { sku, value, field, store_key, id } = editingPrice
+    const { sku, value, field, store_key, id, stores } = editingPrice
     const newVal = parseFloat(value)
     setProducts(prev => prev.map(p => {
       if (p.internal_id === id) {
@@ -500,10 +513,19 @@ const MerchandisingReport = ({ globalStats }) => {
       const payload = {}
       if (field === 'retail') payload.retail_price = newVal
       if (field === 'wholesale') payload.wholesale_price = newVal
-      await apiService.pushProductUpdate(sku, payload, true)
+      const linkedStores = stores?.split(',').map(s => s.trim()) || ['TDO']
+      payload.stores = linkedStores
+      
+      console.log('[savePrice] Submitting draft save to API:', { sku, payload });
+      const res = await apiService.pushProductUpdate(sku, payload, true);
+      console.log('[savePrice] API draft save success response:', res);
+      
+      toast.success(`Draft saved successfully for ${sku}`);
     } catch (err) {
-      console.error('Price update failed:', err)
-      fetchData(true)
+      console.error('[savePrice] Price update API call failed:', err);
+      const errorMsg = err.response?.data?.detail || err.message || 'Unknown network error';
+      toast.error(`Price draft failed to save: ${errorMsg}`);
+      fetchData(true);
     }
   }
 
@@ -618,8 +640,6 @@ const MerchandisingReport = ({ globalStats }) => {
       />
 
       <KpiGrid stats={stats} />
-
-      <AnalyticsWidgets analytics={analyticsInsights} />
 
       <WorkspaceToolbar
         activeVendor={activeVendor}
@@ -882,6 +902,7 @@ const MerchandisingReport = ({ globalStats }) => {
                 setConfirmationModal={setConfirmationModal}
                 getStatusBadge={getStatusBadge}
                 pushingStyle={pushingStyle}
+                pushPriceToShopify={pushPriceToShopify}
               />
             </div>
           </div>

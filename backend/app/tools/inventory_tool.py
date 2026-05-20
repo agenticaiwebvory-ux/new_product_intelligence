@@ -69,6 +69,10 @@ class InventoryTool:
             
             if price is not None:
                 row.retail_price = float(price)
+                if row.tdo_product_id:
+                    cache = self.db.query(Product).get(row.tdo_product_id)
+                    if cache:
+                        cache.price = float(price)
             
         self.db.commit()
 

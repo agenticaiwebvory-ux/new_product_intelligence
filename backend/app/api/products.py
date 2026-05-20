@@ -107,7 +107,11 @@ async def push_update_by_sku(
     _ = Depends(rate_limit)
 ):
     lock_name = f"sync:{update.sku}"
-    if not await acquire_lock(lock_name):
+    try:
+        lock_acquired = await acquire_lock(lock_name)
+    except Exception:
+        lock_acquired = True
+    if not lock_acquired:
         raise HTTPException(status_code=423, detail=f"Style {update.sku} is currently being synced by another user. Please wait.")
 
     try:
@@ -124,15 +128,6 @@ async def push_update_by_sku(
                 product = db.query(models.TheDressOutlet).filter(models.TheDressOutlet.style == base_sku).first()
             if not product:
                 product = db.query(models.TheDressOutlet).filter(models.TheDressOutlet.style.like(f"{base_sku}%")).first()
-
-        # 4. Invalidate List Cache & Analytics Cache (Always do this)
-        try:
-            await clear_cache_pattern("audit:list:*")
-            await clear_cache_pattern(f"audit:analytics:{update.sku}:*")
-            await delete_cache("dashboard:stats")
-            logger.info(f"Invalidated cache for SKU {update.sku} and dashboard stats")
-        except Exception:
-            pass
 
         if not product:
             raise HTTPException(status_code=404, detail=f"Style {update.sku} not found")
@@ -160,24 +155,57 @@ async def push_update_by_sku(
                 stores=[] if update.local_only else (update.stores or ["TDO"])
             )
 
+        # Invalidate Cache AFTER database updates are committed and complete
+        try:
+            await clear_cache_pattern("audit:list:*")
+            await clear_cache_pattern(f"audit:analytics:{update.sku}:*")
+            await delete_cache("dashboard:stats")
+            logger.info(f"Invalidated cache for SKU {update.sku} and dashboard stats")
+        except Exception:
+            pass
+
         return results
     finally:
-        await release_lock(lock_name)
+        try:
+            await release_lock(lock_name)
+        except Exception:
+            pass
 
 @router.post("/revert/{sku}")
-async def revert_sync(sku: str, type: str = "all", db: Session = Depends(get_db)):
+async def revert_sync(sku: str, type: str = "all", store: str = None, db: Session = Depends(get_db)):
+    stores = [store.upper()] if store and store.upper() in ["TDO", "WDO", "KOS", "IM"] else None
     prod_tool = ProductTool(db)
-    return await prod_tool.revert_to_backup(sku=sku, revert_type=type)
+    res = await prod_tool.revert_to_backup(sku=sku, revert_type=type, stores=stores)
+    try:
+        await clear_cache_pattern("audit:list:*")
+        await clear_cache_pattern(f"audit:analytics:{sku}:*")
+        await delete_cache("dashboard:stats")
+    except Exception:
+        pass
+    return res
 
 @router.delete("/changes/{sku}")
 async def clear_product_backup(sku: str, db: Session = Depends(get_db)):
     prod_tool = ProductTool(db)
-    return await prod_tool.clear_backup(sku=sku)
+    res = await prod_tool.clear_backup(sku=sku)
+    try:
+        await clear_cache_pattern("audit:list:*")
+        await clear_cache_pattern(f"audit:analytics:{sku}:*")
+        await delete_cache("dashboard:stats")
+    except Exception:
+        pass
+    return res
 
 @router.delete("/changes")
 async def clear_all_backups(db: Session = Depends(get_db)):
     prod_tool = ProductTool(db)
-    return await prod_tool.clear_all_backups()
+    res = await prod_tool.clear_all_backups()
+    try:
+        await clear_cache_pattern("audit:list:*")
+        await delete_cache("dashboard:stats")
+    except Exception:
+        pass
+    return res
 
 @router.post("/{sku}/sync/{store_key}")
 async def sync_to_store(sku: str, store_key: str, db: Session = Depends(get_db)):
@@ -204,6 +232,14 @@ async def sync_to_store(sku: str, store_key: str, db: Session = Depends(get_db))
             sizes=inventory_map,
             stores=[store_key.upper()]
         )
+    
+    try:
+        await clear_cache_pattern("audit:list:*")
+        await clear_cache_pattern(f"audit:analytics:{sku}:*")
+        await delete_cache("dashboard:stats")
+    except Exception:
+        pass
+
     return {"status": "success", "message": f"Product {dashboard_row.style} synced to {store_key.upper()}"}
 
 @router.get("/{sku}/analytics")
