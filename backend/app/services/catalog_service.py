@@ -11,7 +11,7 @@ class CatalogService:
     def __init__(self, db: Session):
         self.db = db
 
-    def get_master_catalog(self, vendor=None, page=1, limit=50, search=None, date_from=None, date_to=None, status=None):
+    def get_master_catalog(self, vendor=None, page=1, limit=50, search=None, date_from=None, date_to=None):
         start_time = time.time()
         offset = (page - 1) * limit
         logger.info(f"get_master_catalog started (Page: {page}, Limit: {limit}, Search: {search}) for vendor: {vendor}")
@@ -42,8 +42,6 @@ class CatalogService:
                 or_(Product.tags == None, ~Product.tags.ilike("%discontinued%"))
             )
 
-            if status:
-                query = query.filter(Product.status == status)
             if date_from:
                 query = query.filter(Product.published_at >= date_from)
             if date_to:
@@ -77,8 +75,6 @@ class CatalogService:
                 or_(Product.tags == None, ~Product.tags.ilike("%discontinued%"))
             )
 
-            if status:
-                base_query = base_query.filter(Product.status == status)
             if date_from:
                 base_query = base_query.filter(Product.published_at >= date_from)
             if date_to:
@@ -114,8 +110,6 @@ class CatalogService:
                     or_(Product.tags == None, ~Product.tags.ilike("%discontinued%"))
                 )
 
-                if status:
-                    q2 = q2.filter(Product.status == status)
                 if date_from:
                     q2 = q2.filter(Product.published_at >= date_from)
                 if date_to:

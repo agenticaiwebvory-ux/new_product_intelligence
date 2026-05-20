@@ -16,13 +16,12 @@ async def get_dashboard_stats(
     store: str = None,
     search: str = None,
     tags: str = None,
-    status: str = None,
     date_from: str = None,
     date_to: str = None,
     db: Session = Depends(get_db), 
     response: Response = None
 ):
-    cache_key = f"dashboard:stats:v3:{vendor}:{store}:{search}:{tags}:{status}:{date_from}:{date_to}"
+    cache_key = f"dashboard:stats:v3:{vendor}:{store}:{search}:{tags}:{date_from}:{date_to}"
     try:
         # 1. Try Cache
         cached = await get_cache(cache_key)
@@ -34,8 +33,8 @@ async def get_dashboard_stats(
         service = DashboardService(db)
         
         # Run heavy queries in a thread pool
-        stats_data = await anyio.to_thread.run_sync(lambda: service.get_aggregated_stats(vendor=vendor, store=store, search=search, tags=tags, status=status, date_from=date_from, date_to=date_to))
-        designers_data = await anyio.to_thread.run_sync(lambda: service.get_designers_with_counts(store=store, tags=tags, status=status))
+        stats_data = await anyio.to_thread.run_sync(lambda: service.get_aggregated_stats(vendor=vendor, store=store, search=search, tags=tags, date_from=date_from, date_to=date_to))
+        designers_data = await anyio.to_thread.run_sync(lambda: service.get_designers_with_counts(store=store, tags=tags))
         
         result = {
             "stats": stats_data,
@@ -51,8 +50,8 @@ async def get_dashboard_stats(
         # Redis unavailable — log and fall back to direct DB query
         logger.warning(f"Cache miss (Redis error) for {cache_key}: {e}")
         service = DashboardService(db)
-        stats_data = await anyio.to_thread.run_sync(lambda: service.get_aggregated_stats(vendor=vendor, store=store, search=search, tags=tags, status=status, date_from=date_from, date_to=date_to))
-        designers_data = await anyio.to_thread.run_sync(lambda: service.get_designers_with_counts(store=store, tags=tags, status=status))
+        stats_data = await anyio.to_thread.run_sync(lambda: service.get_aggregated_stats(vendor=vendor, store=store, search=search, tags=tags, date_from=date_from, date_to=date_to))
+        designers_data = await anyio.to_thread.run_sync(lambda: service.get_designers_with_counts(store=store, tags=tags))
         return {
             "stats": stats_data,
             "designers": designers_data
