@@ -94,9 +94,8 @@ const MerchandisingReport = ({ globalStats }) => {
   const [customDateFrom, setCustomDateFrom] = useState('')
   const [customDateTo, setCustomDateTo] = useState('')
   const [tagSearch, setTagSearch] = useState('')
-  const [viewsFilter, setViewsFilter] = useState('all')
-  const [sellThruFilter, setSellThruFilter] = useState('all')
-  const [returnsFilter, setReturnsFilter] = useState('all')
+  const [sortMetric, setSortMetric] = useState('none')
+  const [sortOrder, setSortOrder] = useState('highest')
   const [confirmationModal, setConfirmationModal] = useState(null)
   const [isSyncingPrice, setIsSyncingPrice] = useState(false)
   const [isSyncingTags, setIsSyncingTags] = useState(false)
@@ -562,40 +561,22 @@ const MerchandisingReport = ({ globalStats }) => {
     if (activeStoreFilter === 'ALL') return true;
     return p.store_health?.[activeStoreFilter] !== 'MISSING';
   });
-  // Compute means for avg sorting
-  const avgCache = {};
-  const getVal = (p, type) => {
-    if (type === 'views') return p.pageviews_details?.days_90 || 0;
-    if (type === 'sold') return p.sell_thru_details?.days_90 || 0;
-    if (type === 'returns') return p.returns_details?.days_90 || 0;
-    return 0;
-  };
-  ['views', 'sold', 'returns'].forEach(t => {
-    const f = t === 'views' ? viewsFilter : t === 'sold' ? sellThruFilter : returnsFilter;
-    if (f === 'avg') {
-      const vals = filtered.map(p => getVal(p, t));
-      avgCache[t] = vals.reduce((s, v) => s + v, 0) / (vals.length || 1);
-    }
-  });
-  filtered.sort((a, b) => {
-    const dir = (type) => {
-      const f = type === 'views' ? viewsFilter : type === 'sold' ? sellThruFilter : returnsFilter;
-      if (f === 'highest') return -1;
-      if (f === 'lowest') return 1;
-      if (f === 'avg') return -1;
+  // Apply sort
+  if (sortMetric !== 'none') {
+    const getVal = (p) => {
+      if (sortMetric === 'views') return p.pageviews_details?.days_90 || 0;
+      if (sortMetric === 'sold') return p.sell_thru_details?.days_90 || 0;
+      if (sortMetric === 'returns') return p.returns_details?.days_90 || 0;
       return 0;
     };
-    const score = (p, type) => {
-      const f = type === 'views' ? viewsFilter : type === 'sold' ? sellThruFilter : returnsFilter;
-      if (f === 'avg') return -Math.abs(getVal(p, type) - avgCache[type]);
-      return getVal(p, type);
-    };
-    let order = 0;
-    if (viewsFilter !== 'all') order = order || (score(a, 'views') - score(b, 'views')) * dir('views');
-    if (sellThruFilter !== 'all') order = order || (score(a, 'sold') - score(b, 'sold')) * dir('sold');
-    if (returnsFilter !== 'all') order = order || (score(a, 'returns') - score(b, 'returns')) * dir('returns');
-    return order;
-  })
+    if (sortOrder === 'avg') {
+      const vals = filtered.map(getVal);
+      const mean = vals.reduce((s, v) => s + v, 0) / (vals.length || 1);
+      filtered.sort((a, b) => Math.abs(getVal(a) - mean) - Math.abs(getVal(b) - mean));
+    } else {
+      filtered.sort((a, b) => (getVal(b) - getVal(a)) * (sortOrder === 'lowest' ? -1 : 1));
+    }
+  }
   const visibleTotalCount = activeStoreFilter === 'ALL' ? totalCount : filtered.length
   const totalPages = Math.ceil(visibleTotalCount / itemsPerPage)
   const currentItems = filtered
@@ -629,12 +610,10 @@ const MerchandisingReport = ({ globalStats }) => {
         setCustomDateTo={setCustomDateTo}
         tagSearch={tagSearch}
         setTagSearch={setTagSearch}
-        viewsFilter={viewsFilter}
-        setViewsFilter={setViewsFilter}
-        sellThruFilter={sellThruFilter}
-        setSellThruFilter={setSellThruFilter}
-        returnsFilter={returnsFilter}
-        setReturnsFilter={setReturnsFilter}
+        sortMetric={sortMetric}
+        setSortMetric={setSortMetric}
+        sortOrder={sortOrder}
+        setSortOrder={setSortOrder}
       />
 
       {/* Table */}

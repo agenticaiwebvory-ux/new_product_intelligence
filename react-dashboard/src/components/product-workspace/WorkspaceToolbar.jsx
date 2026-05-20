@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ChevronDown, Tag, Eye, TrendingUp, RotateCcw, CalendarDays } from 'lucide-react'
+import { ChevronDown, Tag, ArrowUpDown, CalendarDays } from 'lucide-react'
 import { useAppSelector } from '../../app/hooks'
 
 export const DEFAULT_CATALOG_VENDOR = 'The Dress Outlet'
@@ -73,12 +73,10 @@ const WorkspaceToolbar = ({
   setCustomDateTo,
   tagSearch,
   setTagSearch,
-  viewsFilter,
-  setViewsFilter,
-  sellThruFilter,
-  setSellThruFilter,
-  returnsFilter,
-  setReturnsFilter,
+  sortMetric,
+  setSortMetric,
+  sortOrder,
+  setSortOrder,
 }) => {
   const storeKeys = useAppSelector((state) => Object.keys(state.stores.connections))
 
@@ -154,58 +152,33 @@ const WorkspaceToolbar = ({
           )}
         </div>
 
-        {/* Views filter */}
-        <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg shadow-sm">
+        {/* Sort by metric */}
+        <div className="flex items-center gap-0 bg-white border border-slate-200 rounded-lg shadow-sm divide-x divide-slate-200">
           <div className="flex items-center gap-1.5 pl-3 pr-1">
-            <Eye size={14} className="text-slate-400" />
+            <ArrowUpDown size={14} className="text-slate-400" />
           </div>
           <select
-            value={viewsFilter}
-            onChange={(e) => setViewsFilter(e.target.value)}
-            className="h-10 appearance-none bg-transparent pr-7 pl-1 text-[0.78rem] font-extrabold text-slate-700 outline-none cursor-pointer"
+            value={sortMetric}
+            onChange={(e) => setSortMetric(e.target.value)}
+            className="h-10 appearance-none bg-transparent pr-7 pl-2 text-[0.78rem] font-extrabold text-slate-700 outline-none cursor-pointer"
           >
-            <option value="all">Views</option>
+            <option value="none">Sort by</option>
+            <option value="views">Views</option>
+            <option value="sold">Sold</option>
+            <option value="returns">Returns</option>
+          </select>
+          <ChevronDown size={12} className="pointer-events-none -ml-4 text-slate-400" />
+          <select
+            value={sortOrder}
+            onChange={(e) => setSortOrder(e.target.value)}
+            disabled={sortMetric === 'none'}
+            className={`h-10 appearance-none bg-transparent pr-7 pl-2 text-[0.78rem] font-extrabold outline-none cursor-pointer ${sortMetric === 'none' ? 'text-slate-300' : 'text-slate-700'}`}
+          >
             <option value="highest">Highest</option>
             <option value="avg">Avg</option>
             <option value="lowest">Lowest</option>
           </select>
-          <ChevronDown size={12} className="pointer-events-none -ml-5 text-slate-400" />
-        </div>
-
-        {/* Sell Thru filter */}
-        <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg shadow-sm">
-          <div className="flex items-center gap-1.5 pl-3 pr-1">
-            <TrendingUp size={14} className="text-slate-400" />
-          </div>
-          <select
-            value={sellThruFilter}
-            onChange={(e) => setSellThruFilter(e.target.value)}
-            className="h-10 appearance-none bg-transparent pr-7 pl-1 text-[0.78rem] font-extrabold text-slate-700 outline-none cursor-pointer"
-          >
-            <option value="all">Sold</option>
-            <option value="highest">Highest</option>
-            <option value="avg">Avg</option>
-            <option value="lowest">Lowest</option>
-          </select>
-          <ChevronDown size={12} className="pointer-events-none -ml-5 text-slate-400" />
-        </div>
-
-        {/* Returns filter */}
-        <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg shadow-sm">
-          <div className="flex items-center gap-1.5 pl-3 pr-1">
-            <RotateCcw size={14} className="text-slate-400" />
-          </div>
-          <select
-            value={returnsFilter}
-            onChange={(e) => setReturnsFilter(e.target.value)}
-            className="h-10 appearance-none bg-transparent pr-7 pl-1 text-[0.78rem] font-extrabold text-slate-700 outline-none cursor-pointer"
-          >
-            <option value="all">Returns</option>
-            <option value="highest">Highest</option>
-            <option value="avg">Avg</option>
-            <option value="lowest">Lowest</option>
-          </select>
-          <ChevronDown size={12} className="pointer-events-none -ml-5 text-slate-400" />
+          <ChevronDown size={12} className={`pointer-events-none -ml-4 ${sortMetric === 'none' ? 'text-slate-200' : 'text-slate-400'}`} />
         </div>
       </div>
     </div>
