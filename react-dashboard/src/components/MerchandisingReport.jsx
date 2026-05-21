@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   ChevronRight,
   RefreshCw, Pencil, Check, ArrowUpRight, ChevronDown,
@@ -12,6 +12,7 @@ import KpiGrid from './merchandising/KpiGrid'
 import ProductAnalyticsPanel from './merchandising/ProductAnalyticsPanel'
 import ProductDetailContent from './merchandising/ProductDetailContent'
 import WorkspaceToolbar, { DEFAULT_CATALOG_VENDOR } from './product-workspace/WorkspaceToolbar'
+import ProductRow from './product-workspace/ProductRow'
 import { apiService } from '../services/api'
 import { readJsonStorage, writeJsonStorage } from '../utils/storage'
 import toast from 'react-hot-toast'
@@ -112,6 +113,7 @@ const MerchandisingReport = ({ globalStats }) => {
   const [processingOps, setProcessingOps] = useState({})
   const fetchSequenceRef = useRef(0)
   const filterKeyRef = useRef('')
+  const vendorCacheRef = useRef({})
 
   const getDateRange = useCallback(() => {
     if (datePreset === 'all') return { dateFrom: null, dateTo: null }
@@ -137,9 +139,20 @@ const MerchandisingReport = ({ globalStats }) => {
     const { dateFrom, dateTo } = getDateRange()
     const requestId = fetchSequenceRef.current + 1
     fetchSequenceRef.current = requestId
-    if (!silent) setLoading(true)
+
+    const vendorQuery = currentVendor === 'ALL' ? '' : currentVendor
+    const cacheKey = `${vendorQuery}_${page}_${itemsPerPage}_${auditSearch}_${tagSearch}_${activeStoreFilter}_${statusFilter}_${dateFrom}_${dateTo}`
+    const cached = vendorCacheRef.current[cacheKey]
+
+    if (cached && !silent) {
+      setProducts(cached.products)
+      setStats(cached.stats)
+      setTotalCount(cached.totalCount)
+    } else if (!silent) {
+      setLoading(true)
+    }
+
     try {
-        const vendorQuery = currentVendor === 'ALL' ? '' : currentVendor
         const extraParams = { tagSearch, store: activeStoreFilter, status: statusFilter }
         const [prodRes, statsRes, analyticsRes] = await Promise.all([
           apiService.getProducts(vendorQuery, page, itemsPerPage, auditSearch, dateFrom, dateTo, extraParams),
@@ -149,7 +162,6 @@ const MerchandisingReport = ({ globalStats }) => {
 
         const rawProducts = prodRes.products || (Array.isArray(prodRes) ? prodRes : [])
         const backendTotal = prodRes.total_count || rawProducts.length
-        setTotalCount(backendTotal)
 
         const parseSizes = (str) => {
           if (!str) return {}
@@ -168,7 +180,6 @@ const MerchandisingReport = ({ globalStats }) => {
             const isLinked = store?.linked || p[`${s.toLowerCase()}_product_id`]
 
             if (isLinked) {
-              // Status comes from DB — if null/undefined, show UNKNOWN (not DRAFT)
               const rawStatus = store?.status?.toUpperCase() || p[`${s.toLowerCase()}_status`]?.toUpperCase() || null
               storeHealth[s] = rawStatus === 'ACTIVE' ? 'ACTIVE' : rawStatus === 'DRAFT' ? 'DRAFT' : 'UNKNOWN'
             } else {
@@ -198,9 +209,8 @@ const MerchandisingReport = ({ globalStats }) => {
           }
         })
         if (fetchSequenceRef.current !== requestId) return
-        setProducts(prev => mergePreservedAnalytics(mapped, prev))
         const raw = statsRes.stats || statsRes
-        setStats({
+        const newStats = {
           total: raw.total_styles || 0,
           total_units: raw.total_inventory || 0,
           total_sold: raw.total_sold || 0,
@@ -211,7 +221,11 @@ const MerchandisingReport = ({ globalStats }) => {
           im_missing: raw.im_missing || 0,
           vendors: raw.vendors,
           store_health: raw.store_health,
-        })
+        }
+        setProducts(prev => mergePreservedAnalytics(mapped, prev))
+        setStats(newStats)
+        setTotalCount(backendTotal)
+        vendorCacheRef.current[cacheKey] = { products: mapped, stats: newStats, totalCount: backendTotal }
     } catch (err) {
       console.error('API Error:', err)
     } finally {
@@ -764,78 +778,15 @@ const MerchandisingReport = ({ globalStats }) => {
                 </td>
               </tr>
             ) : currentItems.map(p => (
-              <Fragment key={p.internal_id}>
-                <tr
-                  className="border-b border-slate-100 hover:bg-slate-50 transition-colors cursor-pointer"
-                  style={{ transform: 'translateZ(0)' }}
-                  onClick={() => setDetailProduct(p)}
-                >
-                  <td className="p-5 text-center">
-                    <ChevronRight
-                      size={20}
-                      onClick={(e) => { e.stopPropagation(); toggleExpand(p.internal_id) }}
-                      className={`cursor-pointer transition-transform text-slate-400 ${expandedRows.has(p.internal_id) ? 'rotate-90' : ''}`}
-                    />
-                  </td>
-                  <td className="p-5">
-                    <div className="w-14 h-14 rounded-xl overflow-hidden border border-slate-200 bg-slate-100 flex items-center justify-center">
-                      <img
-                        src={p.main_image}
-                        alt="product"
-                        loading="lazy"
-                        className="w-full h-full object-cover transition-opacity duration-300 opacity-0"
-                        onLoad={(e) => e.target.classList.remove('opacity-0')}
-                      />
-                    </div>
-                  </td>
-                  <td className="p-5">
-                    <div className="flex flex-col gap-1">
-                      <div className="flex items-center gap-3">
-                        <div className="text-[0.9rem] font-black text-slate-900 tracking-tight">
-                          {p.style}
-                        </div>
-                        {processingOps[p.sku] && <RefreshCw size={14} className="animate-spin text-brand shrink-0" />}
-                        {getStatusBadge(p.shopify_status, true)}
-                      </div>
-                      <div className="text-[0.7rem] text-slate-400 font-bold truncate max-w-[180px]" title={p.title}>{p.title}</div>
-                    </div>
-                  </td>
-                  <td className="p-5">
-                    <div className="text-[0.8rem] font-bold text-slate-600 uppercase tracking-tight">
-                      {p.vendor || 'Unknown'}
-                    </div>
-                  </td>
-                  <td className="p-5 text-center">
-                    <div className="flex justify-center gap-10">
-                      <span className="text-[0.8rem] text-slate-500 font-bold opacity-60">{(p.pageviews_details?.days_30 || 0).toLocaleString()}</span>
-                      <span className="text-[0.8rem] text-slate-500 font-bold opacity-60">{(p.pageviews_details?.days_60 || 0).toLocaleString()}</span>
-                      <span className="text-[0.8rem] text-indigo-600 font-black scale-105">{(p.pageviews_details?.days_90 || 0).toLocaleString()}</span>
-                    </div>
-                  </td>
-                  <td className="p-5 text-center">
-                    <div className="flex justify-center gap-10">
-                      <span className="text-[0.8rem] text-slate-500 font-bold opacity-60">{(p.sell_thru_details?.days_30 || 0).toLocaleString()}</span>
-                      <span className="text-[0.8rem] text-slate-500 font-bold opacity-60">{(p.sell_thru_details?.days_60 || 0).toLocaleString()}</span>
-                      <span className="text-[0.8rem] text-emerald-600 font-black scale-105">{(p.sell_thru_details?.days_90 || 0).toLocaleString()}</span>
-                    </div>
-                  </td>
-                  <td className="p-5 text-center">
-                    <div className="flex justify-center gap-3">
-                      <span className="text-[0.8rem] text-slate-500 font-bold opacity-60">{(p.returns_details?.days_30 || 0).toLocaleString()}</span>
-                      <span className="text-[0.8rem] text-slate-500 font-bold opacity-60">{(p.returns_details?.days_60 || 0).toLocaleString()}</span>
-                      <span className="text-[0.8rem] text-rose-600 font-black scale-105">{(p.returns_details?.days_90 || 0).toLocaleString()}</span>
-                    </div>
-                  </td>
-                </tr>
-
-                {expandedRows.has(p.internal_id) && (
-                  <tr className="bg-slate-50">
-                    <td colSpan={7} className="p-4">
-                      <ProductAnalyticsPanel p={p} />
-                    </td>
-                  </tr>
-                )}
-              </Fragment>
+              <ProductRow
+                key={p.internal_id}
+                product={p}
+                isExpanded={expandedRows.has(p.internal_id)}
+                processingOps={processingOps}
+                onToggle={toggleExpand}
+                onClickDetail={setDetailProduct}
+                getStatusBadge={getStatusBadge}
+              />
             ))}
           </tbody>
         </table>

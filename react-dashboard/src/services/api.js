@@ -172,9 +172,41 @@ export const apiService = {
     const response = await api.post(`/products/${productId}/sync/${storeKey}`);
     return response.data;
   },
-  async getProductChanges(page = 1, limit = 50, search = "", sortBy = "newest") {
+  async getProductChanges(page = 1, limit = 50, search = "", sortBy = "newest") {
     const response = await api.get('/products/changes', {
       params: { page, limit, search: search || undefined, sort_by: sortBy }
+    });
+    return response.data;
+  },
+
+  async getChangeLogs(page = 1, limit = 20, style = null, changeType = null, store = null) {
+    const response = await api.get('/products/changes/audit', {
+      params: {
+        page,
+        limit,
+        style: style || undefined,
+        change_type: changeType && changeType !== 'ALL' ? changeType : undefined,
+        store: store && store !== 'ALL' ? store : undefined
+      }
+    });
+    return response.data;
+  },
+
+  async getChangeLogFilters() {
+    const response = await api.get('/products/changes/filters');
+    return response.data;
+  },
+
+  async getUnifiedChanges(page = 1, limit = 50, search = "", sortBy = "newest", changeType = null, store = null) {
+    const response = await api.get('/products/changes/unified', {
+      params: {
+        page,
+        limit,
+        search: search || undefined,
+        sort_by: sortBy,
+        change_type: changeType && changeType !== 'ALL' ? changeType : undefined,
+        store: store && store !== 'ALL' ? store : undefined
+      }
     });
     return response.data;
   },

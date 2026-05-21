@@ -238,12 +238,12 @@ class DashboardService:
             results.append({"id": name, "name": name, "style_count": count})
         return results
 
-    def get_unified_products(self, vendor=None, page=1, limit=50, search=None, date_from=None, date_to=None):
+    def get_unified_products(self, vendor=None, page=1, limit=50, search=None, date_from=None, date_to=None, store=None, status=None, tag=None):
         start_time = time.time()
         self.logger.info(f"Fetching unified products (Page: {page}, Limit: {limit}, Search: {search}, DateFrom: {date_from}, DateTo: {date_to}) for vendor: {vendor}")
         # 1. Fetch data via CatalogService (Source of Truth: in_stock_dashboard)
         unified_data, master_product_map, image_map, stores, total_count = self.catalog_service.get_master_catalog(
-            vendor, page, limit, search, date_from=date_from, date_to=date_to
+            vendor, page, limit, search, date_from=date_from, date_to=date_to, store=store, status=status, tag=tag
         )
         self.logger.info(f"Catalog fetched: {len(unified_data)} rows in {time.time() - start_time:.2f}s")
 
@@ -304,17 +304,28 @@ class DashboardService:
                     if pid_str not in analytics_map: analytics_map[pid_str] = {}
                     analytics_map[pid_str][tf] = item
 
-        # BULK FETCH RETURNS DATA (from MerchAnalytics in tdo_merch.db)
-        from ..core.database import MerchSessionLocal
+        # BULK FETCH RETURNS DATA (single query on main DB — same DB has all tables now)
         returns_map = {}
         if styles:
-            merch_session = MerchSessionLocal()
-            try:
-                merch_rows = merch_session.query(MerchAnalytics).filter(MerchAnalytics.style_no.in_(styles)).all()
-                for mr in merch_rows:
-                    returns_map[mr.style_no] = mr
-            finally:
-                merch_session.close()
+            merch_rows = self.db.query(MerchAnalytics).filter(MerchAnalytics.style_no.in_(styles)).all()
+            for mr in merch_rows:
+                returns_map[mr.style_no] = mr
+
+        # Bulk fetch sibling rows for backup fallback (avoids N+1)
+        sibling_map = {}
+        styles_needing_sibling = []
+        for row in unified_data:
+            if getattr(row, 'backup_retail_price', None) is None or getattr(row, 'backup_wholesale_price', None) is None:
+                styles_needing_sibling.append(row.style)
+        if styles_needing_sibling:
+            in_sibling = self.db.query(models.InStockDashboard).filter(
+                models.InStockDashboard.style.in_(styles_needing_sibling)
+            ).all()
+            tdo_sibling = self.db.query(models.TheDressOutlet).filter(
+                models.TheDressOutlet.style.in_(styles_needing_sibling)
+            ).all()
+            for s in in_sibling + tdo_sibling:
+                sibling_map[s.style] = s
 
         results = []
         for row in unified_data:
@@ -537,15 +548,7 @@ class DashboardService:
             sales_60_nested, sales_60_flat = self._parse_variant_sales_map(p_analytics.get("60"), "60")
             sales_90_nested, sales_90_flat = self._parse_variant_sales_map(p_analytics.get("90"), "90")
             sales_7_nested, sales_7_flat = self._parse_variant_sales_map(p_analytics.get("7"), "7")
-            sibling_row = None
-            needs_backup_fallback = (
-                getattr(row, 'backup_retail_price', None) is None
-                or getattr(row, 'backup_wholesale_price', None) is None
-            )
-            if needs_backup_fallback:
-                row_table = getattr(row.__class__, "__tablename__", "")
-                sibling_model = models.InStockDashboard if row_table == "the_dress_outlet" else models.TheDressOutlet
-                sibling_row = self.db.query(sibling_model).filter(sibling_model.style == row.style).first()
+            sibling_row = sibling_map.get(row.style)
 
             def backup_value(field):
                 value = getattr(row, field, None)

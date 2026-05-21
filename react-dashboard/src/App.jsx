@@ -85,20 +85,19 @@ function App() {
           main::-webkit-scrollbar-thumb { background: #E2E8F0; border-radius: 10px; }
           main::-webkit-scrollbar-thumb:hover { background: #CBD5E1; }
         `}</style>
-        {activeView === 'scraper' && <ScraperDashboard />}
-        {activeView === 'merchandise' && <MerchandisingReport />}
-        {activeView === 'control_panel' && (
+        <div className={activeView === 'scraper' ? '' : 'hidden'}><ScraperDashboard /></div>
+        <div className={activeView === 'merchandise' ? '' : 'hidden'}><MerchandisingReport /></div>
+        <div className={activeView === 'control_panel' ? '' : 'hidden'}>
           <ControlPanel
             user={user}
             sidebarLinks={sidebarLinks}
             setSidebarLinks={(links) => dispatch(setSidebarLinks(links))}
           />
-        )}
-        {/* New sidebar sections */}
-        {activeView === 'home' && <DashboardHome />}
-        {activeView === 'stores' && <StoresPage />}
-        {activeView === 'tags' && <TagsPage />}
-        {activeView === 'changes' && <ChangesPage />}
+        </div>
+        <div className={activeView === 'home' ? '' : 'hidden'}><DashboardHome /></div>
+        <div className={activeView === 'stores' ? '' : 'hidden'}><StoresPage /></div>
+        <div className={activeView === 'tags' ? '' : 'hidden'}><TagsPage /></div>
+        <div className={activeView === 'changes' ? '' : 'hidden'}><ChangesPage /></div>
       </main>
     </div>
   )

@@ -11,7 +11,7 @@ class CatalogService:
     def __init__(self, db: Session):
         self.db = db
 
-    def get_master_catalog(self, vendor=None, page=1, limit=50, search=None, date_from=None, date_to=None):
+    def get_master_catalog(self, vendor=None, page=1, limit=50, search=None, date_from=None, date_to=None, store=None, status=None, tag=None):
         start_time = time.time()
         offset = (page - 1) * limit
         logger.info(f"get_master_catalog started (Page: {page}, Limit: {limit}, Search: {search}) for vendor: {vendor}")
@@ -55,6 +55,16 @@ class CatalogService:
                         TheDressOutlet.vendor.ilike(search_term)
                     )
                 )
+
+            if tag:
+                query = query.filter(Product.tags.ilike(f"%{tag}%"))
+            if status and status != "all":
+                query = query.filter(TheDressOutlet.tdo_status == status)
+            if store and store != "ALL":
+                store_col = f"{store.lower()}_product_id"
+                col = getattr(TheDressOutlet, store_col, None)
+                if col is not None:
+                    query = query.filter(col.isnot(None))
             
             # Complex Sort
             query = query.order_by(
@@ -97,6 +107,16 @@ class CatalogService:
                     )
                 )
 
+            if tag:
+                base_query = base_query.filter(Product.tags.ilike(f"%{tag}%"))
+            if status and status != "all":
+                base_query = base_query.filter(InStockDashboard.tdo_status == status)
+            if store and store != "ALL":
+                store_col = f"{store.lower()}_product_id"
+                col = getattr(InStockDashboard, store_col, None)
+                if col is not None:
+                    base_query = base_query.filter(col.isnot(None))
+
             if not vendor:
                 # Combined case (Standard Catalog + TDO Catalog)
                 q1 = base_query.filter(InStockDashboard.vendor != TDO_VENDOR_NAME)
@@ -125,12 +145,23 @@ class CatalogService:
                             Product.tags.ilike(search_term)
                         )
                     )
+
+                if tag:
+                    q2 = q2.filter(Product.tags.ilike(f"%{tag}%"))
+                if status and status != "all":
+                    q2 = q2.filter(TheDressOutlet.tdo_status == status)
+                if store and store != "ALL":
+                    store_col = f"{store.lower()}_product_id"
+                    col = getattr(TheDressOutlet, store_col, None)
+                    if col is not None:
+                        q2 = q2.filter(col.isnot(None))
                 
                 total_count = q1.count() + q2.count()
                 
-                # Fetching for combined view (simple merged slicing)
-                data_in_stock = q1.all()
-                data_tdo = q2.all()
+                # Fetching for combined view (bounded + merged slicing)
+                fetch_size = max(limit, offset + limit)
+                data_in_stock = q1.limit(fetch_size).all()
+                data_tdo = q2.limit(fetch_size).all()
                 all_merged = data_in_stock + data_tdo
                 # Sort: Styles starting with # at the end
                 all_merged.sort(key=lambda x: (1 if x.style.startswith('#') else 0, x.style))

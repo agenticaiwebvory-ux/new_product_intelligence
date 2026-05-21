@@ -5,11 +5,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 
 from ..config import BESTSELLER_TAG_PREFIX, SPECIAL_TAGS, TOP_TAG_PREFIX
-from ..core.database import get_merch_db
+from ..core.database import get_db, get_merch_db
 from ..core.redis_client import clear_cache_pattern, delete_cache, get_cache, set_cache
 from ..integrations.shopify.client import ShopifyClient
 from ..schemas.merchandising import MerchandisingReportResponse, TagUpdateRequest
 from ..services.merchandising_service import MerchandisingService
+from ..services.changelog_service import ChangeLogService
 from ..config import STORE_CONFIGS
 
 logger = logging.getLogger("product-intelligence.merchandising.api")
@@ -89,7 +90,7 @@ def export_merchandising_report(
 
 
 @router.post("/update-tags")
-async def update_product_tags(payload: TagUpdateRequest, db: Session = Depends(get_merch_db)):
+async def update_product_tags(payload: TagUpdateRequest, db: Session = Depends(get_merch_db), main_db: Session = Depends(get_db)):
     service = MerchandisingService(db)
     product_id = service.find_product_id(payload.style)
     if not product_id:
@@ -121,6 +122,16 @@ async def update_product_tags(payload: TagUpdateRequest, db: Session = Depends(g
     await clear_cache_pattern("merch:report:*")
     await clear_cache_pattern("merch:stats:*")
     await delete_cache("dashboard:stats")
+
+    changelog = ChangeLogService(main_db)
+    changelog.log_change(
+        change_type="TAG_UPDATE",
+        style=payload.style,
+        store="TDO",
+        old_value=None,
+        new_value=tag_string,
+    )
+
     return {"status": "success", "style": payload.style, "tags": tag_string}
 
 

@@ -193,6 +193,20 @@ class TheDressOutlet(Base):
     matched = Column(Integer)
     notes = Column(Text)
 
+class ChangeLog(Base):
+    __tablename__ = "changelog"
+
+    id = Column(Integer, primary_key=True)
+    store_name = Column(String)
+    product_id = Column(Integer)
+    style_number = Column(String)
+    change_type = Column(String)
+    field_changed = Column(String)
+    old_value = Column(Text)
+    new_value = Column(Text)
+    user_name = Column(String)
+    created_at = Column(DateTime, default=func.now())
+
 class StoreCredential(Base):
     __tablename__ = "store_credentials"
     id = Column(Integer, primary_key=True)

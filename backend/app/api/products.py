@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Response, Request
+from fastapi import APIRouter, Depends, HTTPException, Response, Request, Query
 from sqlalchemy.orm import Session, joinedload, selectinload
 from typing import List, Optional, Any
 from pydantic import BaseModel
@@ -9,6 +9,8 @@ from ..tools.product_tool import ProductTool
 from ..tools.inventory_tool import InventoryTool
 from ..core.redis_client import acquire_lock, release_lock, clear_cache_pattern, get_cache, set_cache, delete_cache
 from ..core.limiter import rate_limit
+from ..services.changelog_service import ChangeLogService
+import json
 import logging
 from datetime import datetime
 
@@ -36,23 +38,24 @@ async def get_products(
     search: Optional[str] = None,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
+    store: Optional[str] = None,
+    status: Optional[str] = None,
+    tag: Optional[str] = None,
     db: Session = Depends(get_db),
     response: Response = None
 ):
-    cache_key = f"audit:list:v2:{vendor}:{page}:{limit}:{search}:{date_from}:{date_to}"
+    cache_key = f"audit:list:v2:{vendor}:{page}:{limit}:{search}:{date_from}:{date_to}:{store}:{status}:{tag}"
     try:
-        # 1. Try Cache
         cached = await get_cache(cache_key)
         if cached:
             if response: response.headers["X-Cache"] = "HIT"
             return cached
 
-        # 2. Cache Miss: Offload sync DB work to thread pool
         from ..services.dashboard_service import DashboardService
         service = DashboardService(db)
         
         result = await anyio.to_thread.run_sync(
-            lambda: service.get_unified_products(vendor=vendor, page=page, limit=limit, search=search, date_from=date_from, date_to=date_to)
+            lambda: service.get_unified_products(vendor=vendor, page=page, limit=limit, search=search, date_from=date_from, date_to=date_to, store=store, status=status, tag=tag)
         )
         
         await set_cache(cache_key, result, ttl=3600)
@@ -60,12 +63,11 @@ async def get_products(
         if response: response.headers["X-Cache"] = "MISS"
         return result
     except Exception as e:
-        # Redis unavailable — log and fall back to direct DB query
         logger.warning(f"Cache miss (Redis error) for {cache_key}: {e}")
         from ..services.dashboard_service import DashboardService
         service = DashboardService(db)
         return await anyio.to_thread.run_sync(
-            lambda: service.get_unified_products(vendor=vendor, page=page, limit=limit, search=search, date_from=date_from, date_to=date_to)
+            lambda: service.get_unified_products(vendor=vendor, page=page, limit=limit, search=search, date_from=date_from, date_to=date_to, store=store, status=status, tag=tag)
         )
 
 @router.get("/changes")
@@ -85,6 +87,105 @@ async def get_product_changes(
         lambda: service.get_changed_products(page=page, limit=limit, search=search, sort_by=sort_by)
     )
     return result
+
+@router.get("/changes/audit")
+async def get_audit_logs(
+    page: int = 1,
+    limit: int = 20,
+    style: str = Query(None),
+    change_type: str = Query(None),
+    store: str = Query(None),
+    db: Session = Depends(get_db),
+):
+    service = ChangeLogService(db)
+    return service.get_logs(page=page, limit=limit, style=style, change_type=change_type, store=store)
+
+
+@router.get("/changes/filters")
+async def get_change_log_filters(db: Session = Depends(get_db)):
+    service = ChangeLogService(db)
+    return service.get_filters()
+
+
+@router.get("/changes/unified")
+async def get_unified_changes(
+    page: int = 1,
+    limit: int = 50,
+    search: str = Query(None),
+    sort_by: str = Query("newest"),
+    change_type: str = Query(None),
+    store: str = Query(None),
+    db: Session = Depends(get_db),
+):
+    from ..services.dashboard_service import DashboardService
+
+    log_service = ChangeLogService(db)
+    dash_service = DashboardService(db)
+
+    audit_result = log_service.get_logs(
+        page=1, limit=9999,
+        style=search,
+        change_type=change_type,
+        store=store,
+    )
+    audit_entries = [
+        {
+            "id": f"audit_{e['id']}",
+            "source": "changelog",
+            "style": e["style"],
+            "store": e["store"],
+            "changed_by": e["changed_by"],
+            "change_type": e["change_type"],
+            "old_value": e["old_value"],
+            "new_value": e["new_value"],
+            "timestamp": e["created_at"],
+        }
+        for e in audit_result.get("logs", [])
+    ]
+
+    backup_result = await anyio.to_thread.run_sync(
+        lambda: dash_service.get_changed_products(page=1, limit=9999, search=search, sort_by="newest")
+    )
+    backup_entries = []
+    for item in backup_result.get("items", []):
+        fields = item.get("changes", {})
+        change_types = set()
+        if "retail_price" in fields or "wholesale_price" in fields:
+            change_types.add("PRICE_UPDATE")
+        if "sizes" in fields or "total_inventory" in fields:
+            change_types.add("STOCK_UPDATE")
+        if "title" in fields:
+            change_types.add("CONTENT_UPDATE")
+        backup_entries.append({
+            "id": f"backup_{item.get('source_table', '')}_{item['style']}",
+            "source": "backup",
+            "style": item["style"],
+            "vendor": item.get("vendor", ""),
+            "store": "ALL",
+            "changed_by": "System (Backup)",
+            "change_type": " | ".join(sorted(change_types)) if change_types else "BACKUP",
+            "old_value": json.dumps({k: v["before"] for k, v in fields.items()}),
+            "new_value": json.dumps({k: v["after"] for k, v in fields.items()}),
+            "fields": fields,
+            "timestamp": item.get("changes_made_at") or "2024-01-01T00:00:00",
+        })
+
+    merged = audit_entries + backup_entries
+    merged.sort(key=lambda x: x["timestamp"] or "", reverse=(sort_by != "oldest"))
+
+    total = len(merged)
+    start = (page - 1) * limit
+    end = start + limit
+    paged = merged[start:end]
+
+    return {
+        "success": True,
+        "items": paged,
+        "total_count": total,
+        "total_pages": max(1, (total + limit - 1) // limit),
+        "page": page,
+    }
+
 
 class SKUUpdate(BaseModel):
     sku: str
@@ -132,7 +233,10 @@ async def push_update_by_sku(
 
         if not product:
             raise HTTPException(status_code=404, detail=f"Style {update.sku} not found")
-        
+
+        old_retail = getattr(product, 'retail_price', None)
+        old_wholesale = getattr(product, 'wholesale_price', None)
+
         prod_tool = ProductTool(db)
         results = await prod_tool.update_content(
             sku=update.sku,
@@ -164,6 +268,22 @@ async def push_update_by_sku(
             logger.info(f"Invalidated cache for SKU {update.sku} and dashboard stats")
         except Exception:
             pass
+
+        # Log changes to changelog
+        try:
+            log_service = ChangeLogService(db)
+            targets = update.stores or ["TDO", "WDO", "KOS", "IM"]
+            for store_key in targets:
+                if update.retail_price is not None or update.wholesale_price is not None:
+                    log_service.log_change(
+                        change_type="PRICE_UPDATE",
+                        style=update.sku,
+                        store=store_key,
+                        old_value=json.dumps({"retail_price": old_retail, "wholesale_price": old_wholesale}),
+                        new_value=json.dumps({"retail_price": update.retail_price, "wholesale_price": update.wholesale_price}),
+                    )
+        except Exception as e:
+            logger.warning(f"Failed to log change for {update.sku}: {e}")
 
         return results
     finally:
