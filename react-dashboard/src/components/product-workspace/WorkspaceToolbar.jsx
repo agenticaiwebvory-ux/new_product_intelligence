@@ -1,8 +1,59 @@
-import { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import { ChevronDown, Tag, ArrowUpDown, SlidersHorizontal, CalendarDays } from 'lucide-react'
 import { useAppSelector } from '../../app/hooks'
 
 export const DEFAULT_CATALOG_VENDOR = 'The Dress Outlet'
+
+const GlassSelect = ({ value, onChange, options, className = '', placeholder = 'Select...', disabled = false, wrapperClassName = '' }) => {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  const selected = options.find(o => o.value === value)
+
+  return (
+    <div className={`relative ${wrapperClassName}`} ref={ref}>
+      <button
+        type="button"
+        onClick={() => { if (!disabled) setOpen(!open) }}
+        className={`flex items-center gap-1 w-full ${className} ${disabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+      >
+        <span className="flex-1 truncate text-left">{selected?.label || placeholder}</span>
+        <ChevronDown size={12} className={`shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+            <div
+              className="absolute left-0 right-0 top-full mt-1 z-50 flex flex-col bg-white/95 backdrop-blur-sm rounded-xl shadow-xl border border-white/60 py-2 max-h-[25vh] overflow-y-auto"
+            >
+            {options.map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => { onChange(opt.value); setOpen(false) }}
+                className={`w-full text-left px-3 py-1.5 text-[0.75rem] font-semibold transition-colors ${
+                  opt.value === value
+                    ? 'text-slate-900 bg-slate-100'
+                    : 'text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
 
 const FilterPopover = ({
   open,
@@ -40,48 +91,46 @@ const FilterPopover = ({
       <div className="fixed inset-0 z-40" onClick={onClose} />
       <div
         ref={ref}
-        className="absolute right-0 top-full mt-2 z-50 w-64 bg-white rounded-xl shadow-xl border border-slate-200 p-4 transition-all duration-200 scale-100 opacity-100"
+        className="absolute right-0 top-full mt-2 z-50 w-64 bg-white/95 backdrop-blur-sm rounded-xl shadow-xl border border-white/60 p-4 transition-all duration-200 scale-100 opacity-100"
       >
         {/* Date */}
         <div className="mb-4">
-          <div className="text-[0.6rem] font-black text-slate-400 uppercase tracking-widest mb-2">Date</div>
-          <select
+          <div className="text-[0.6rem] font-black text-slate-500 uppercase tracking-widest mb-2">Date</div>
+          <GlassSelect
             value={datePreset}
-            onChange={(e) => setDatePreset(e.target.value)}
-            className="w-full h-8 appearance-none bg-slate-50 border border-slate-200 rounded-lg pl-2.5 pr-7 text-[0.72rem] font-semibold text-slate-700 outline-none cursor-pointer hover:border-slate-300 transition-colors"
-          >
-            <option value="all">All Time</option>
-            <option value="7d">Last 7 Days</option>
-            <option value="30d">Last 30 Days</option>
-            <option value="90d">Last 90 Days</option>
-            <option value="1y">Last 1 Year</option>
-            <option value="custom">Custom Range</option>
-          </select>
+            onChange={(val) => setDatePreset(val)}
+            options={[
+              { value: 'all', label: 'All' },
+              { value: '7d', label: 'Last 7 Days' },
+              { value: '30d', label: 'Last 30 Days' },
+              { value: '90d', label: 'Last 90 Days' },
+              { value: '1y', label: 'Last 1 Year' },
+              { value: 'custom', label: 'Custom Range' },
+            ]}
+            className="w-full h-8 bg-slate-50 border border-brand/30 rounded-lg pl-2.5 pr-2 text-[0.72rem] font-semibold text-slate-700 outline-none hover:border-brand/60 transition-colors"
+          />
           {datePreset === 'custom' && (
             <div className="mt-2 flex flex-col gap-1.5">
               <input type="date" value={customDateFrom} onChange={(e) => setCustomDateFrom(e.target.value)}
-                className="w-full h-7 text-[0.68rem] font-semibold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-2 outline-none" />
+                className="w-full h-7 text-[0.68rem] font-semibold text-slate-700 bg-white/80 border border-white/60 rounded-lg px-2 outline-none" />
               <input type="date" value={customDateTo} onChange={(e) => setCustomDateTo(e.target.value)}
-                className="w-full h-7 text-[0.68rem] font-semibold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-2 outline-none" />
+                className="w-full h-7 text-[0.68rem] font-semibold text-slate-700 bg-white/80 border border-white/60 rounded-lg px-2 outline-none" />
             </div>
           )}
         </div>
         {/* Store */}
         <div>
-          <div className="text-[0.6rem] font-black text-slate-400 uppercase tracking-widest mb-2">Store</div>
-          <select
+          <div className="text-[0.6rem] font-black text-slate-500 uppercase tracking-widest mb-2">Store</div>
+          <GlassSelect
             value={activeStoreFilter}
-            onChange={(e) => setActiveStoreFilter(e.target.value)}
-            className="w-full h-8 appearance-none bg-slate-50 border border-slate-200 rounded-lg pl-2.5 pr-7 text-[0.72rem] font-semibold text-slate-700 outline-none cursor-pointer hover:border-slate-300 transition-colors"
-          >
-            <option value="ALL">All Stores</option>
-            {storeKeys.map((store) => (
-              <option key={store} value={store.toUpperCase()}>{store.toUpperCase()} Store</option>
-            ))}
-          </select>
+            onChange={(val) => setActiveStoreFilter(val)}
+            options={[
+              { value: 'ALL', label: 'All' },
+              ...storeKeys.map((store) => ({ value: store.toUpperCase(), label: `${store.toUpperCase()} Store` })),
+            ]}
+            className="w-full h-8 bg-slate-50 border border-brand/30 rounded-lg pl-2.5 pr-2 text-[0.72rem] font-semibold text-slate-700 outline-none hover:border-brand/60 transition-colors"
+          />
         </div>
-
-        {/* Reset */}
         {(datePreset !== 'all' || activeStoreFilter !== 'ALL') && (
           <button
             onClick={() => {
@@ -90,7 +139,7 @@ const FilterPopover = ({
               setCustomDateTo('')
               setActiveStoreFilter('ALL')
             }}
-            className="mt-4 w-full h-8 text-[0.7rem] font-bold text-slate-500 bg-slate-50 border border-slate-200 rounded-lg hover:bg-slate-100 hover:text-slate-700 transition-colors"
+            className="mt-4 w-full h-8 text-[0.7rem] font-bold text-slate-500 bg-slate-50 border border-brand/30 rounded-lg hover:bg-slate-100 hover:text-slate-700 transition-colors"
           >
             Reset filters
           </button>
@@ -100,19 +149,28 @@ const FilterPopover = ({
   )
 }
 
-const PillSelect = ({ value, onChange, children, icon: Icon, className = '' }) => (
-  <div className={`relative flex items-center h-9 bg-white border border-slate-200 rounded-full shadow-sm hover:shadow hover:border-slate-300 transition-all duration-150 ${className}`}>
-    {Icon && <Icon size={14} className="text-slate-400 ml-3 shrink-0" />}
-    <select
-      value={value}
-      onChange={onChange}
-      className="h-full appearance-none bg-transparent pl-2 pr-7 text-[0.75rem] font-semibold text-slate-700 outline-none cursor-pointer"
-    >
-      {children}
-    </select>
-    <ChevronDown size={12} className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400" />
-  </div>
-)
+const PillSelect = ({ value, onChange, children, icon: Icon, className = '' }) => {
+  const options = []
+  if (children) {
+    React.Children.forEach(children, (child) => {
+      if (child?.type === 'option') {
+        options.push({ value: child.props.value, label: child.props.children })
+      }
+    })
+  }
+  return (
+    <div className={`relative flex items-center h-9 bg-white border border-slate-200 rounded-full shadow-sm hover:shadow hover:border-slate-300 transition-all duration-150 ${className}`}>
+      {Icon && <Icon size={14} className="text-slate-400 ml-3 shrink-0" />}
+      <GlassSelect
+        value={value}
+        onChange={(val) => onChange({ target: { value: val } })}
+        options={options}
+        wrapperClassName="flex-1"
+        className="h-full bg-transparent pl-2 pr-4 text-[0.75rem] font-semibold text-slate-700 outline-none"
+      />
+    </div>
+  )
+}
 
 const VendorDropdown = ({ activeVendor, setActiveVendor, stats }) => {
   const vendors = stats?.vendors || []
@@ -124,20 +182,18 @@ const VendorDropdown = ({ activeVendor, setActiveVendor, stats }) => {
   const totalCount = vendors.reduce((sum, v) => sum + (v.style_count || 0), 0)
 
   return (
-    <div className="relative flex items-center h-9 bg-slate-900 border border-slate-900 rounded-full shadow-sm transition-all duration-150">
-      <select
-        value={activeVendor}
-        onChange={(e) => setActiveVendor(e.target.value)}
-        className="h-full appearance-none bg-transparent pl-3 pr-8 text-[0.75rem] font-semibold outline-none cursor-pointer text-white"
-      >
-        <option value="ALL" style={{ color: '#1e293b', background: '#fff' }}>All Vendors ({totalCount})</option>
-        {orderedVendors.map((vendor) => {
-          const name = vendor.name || vendor.vendor
-          return <option key={name} value={name} style={{ color: '#1e293b', background: '#fff' }}>{name} ({vendor.style_count})</option>
-        })}
-      </select>
-      <ChevronDown size={12} className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-white/70" />
-    </div>
+    <GlassSelect
+      value={activeVendor}
+      onChange={(val) => setActiveVendor(val)}
+      options={[
+        { value: 'ALL', label: `All Vendors (${totalCount})` },
+        ...orderedVendors.map((vendor) => ({
+          value: vendor.name || vendor.vendor,
+          label: `${vendor.name || vendor.vendor} (${vendor.style_count})`,
+        })),
+      ]}
+      className="h-9 bg-slate-900 rounded-full px-3 text-[0.75rem] font-semibold text-white"
+    />
   )
 }
 
@@ -189,35 +245,39 @@ const WorkspaceToolbar = ({
           <div className="flex items-center pl-3 pr-1">
             <ArrowUpDown size={14} className="text-slate-400" />
           </div>
-          <select
+          <GlassSelect
             value={sortMetric}
-            onChange={(e) => setSortMetric(e.target.value)}
-            className="h-full appearance-none bg-transparent pl-2 pr-6 text-[0.75rem] font-semibold text-slate-700 outline-none cursor-pointer"
-          >
-            <option value="none">Sort by</option>
-            <option value="views">Views</option>
-            <option value="sold">Sold</option>
-            <option value="returns">Returns</option>
-          </select>
-          <select
+            onChange={(val) => setSortMetric(val)}
+            options={[
+              { value: 'none', label: 'Sort by' },
+              { value: 'views', label: 'Views' },
+              { value: 'sold', label: 'Sold' },
+              { value: 'returns', label: 'Returns' },
+            ]}
+            wrapperClassName="flex-1"
+            className="h-full bg-transparent pl-2 pr-3 text-[0.75rem] font-semibold text-slate-700 outline-none"
+          />
+          <GlassSelect
             value={sortOrder}
-            onChange={(e) => setSortOrder(e.target.value)}
+            onChange={(val) => setSortOrder(val)}
+            options={[
+              { value: 'highest', label: 'Highest' },
+              { value: 'avg', label: 'Avg' },
+              { value: 'lowest', label: 'Lowest' },
+            ]}
             disabled={sortMetric === 'none'}
-            className={`h-full appearance-none bg-transparent pl-2 pr-6 text-[0.75rem] font-semibold outline-none cursor-pointer ${sortMetric === 'none' ? 'text-slate-300' : 'text-slate-700'}`}
-          >
-            <option value="highest">Highest</option>
-            <option value="avg">Avg</option>
-            <option value="lowest">Lowest</option>
-          </select>
+            wrapperClassName="flex-1"
+            className={`h-full bg-transparent pl-2 pr-3 text-[0.75rem] font-semibold outline-none ${sortMetric === 'none' ? 'text-slate-300' : 'text-slate-700'}`}
+          />
         </div>
 
         {/* Status */}
-        <PillSelect value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-          <option value="all">Status</option>
-          <option value="ACTIVE">ACTIVE</option>
-          <option value="DRAFT">DRAFT</option>
-          <option value="ARCHIVED">ARCHIVED</option>
-        </PillSelect>
+<PillSelect value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+  <option value="all">Status</option>
+  <option value="ACTIVE">ACTIVE</option>
+  <option value="DRAFT">DRAFT</option>
+  <option value="ARCHIVED">Archived</option>
+</PillSelect>
 
         {/* Filters button */}
         <div className="relative">
@@ -225,8 +285,8 @@ const WorkspaceToolbar = ({
             onClick={() => setFilterOpen(!filterOpen)}
             className={`flex items-center gap-1.5 h-9 px-3.5 rounded-full border shadow-sm transition-all duration-150 text-[0.75rem] font-semibold ${
               filterOpen
-                ? 'bg-blue-50 border-blue-300 text-blue-700 shadow-blue-100'
-                : 'bg-white border-slate-200 text-slate-600 hover:shadow hover:border-slate-300'
+                ? 'bg-white/90 backdrop-blur-sm border-slate-300 text-slate-700 shadow-md'
+                : 'bg-white/80 backdrop-blur-sm border-slate-200 text-slate-600 hover:bg-white/95 hover:border-slate-300'
             }`}
           >
             <SlidersHorizontal size={14} />

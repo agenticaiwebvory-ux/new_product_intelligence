@@ -687,6 +687,10 @@ const MerchandisingReport = ({ globalStats }) => {
   useEffect(() => {
     if (!detailProduct) return
     const handler = (e) => {
+      const tag = e.target.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') return
+      }
       const idx = filtered.findIndex(p => p.internal_id === detailProduct.internal_id)
       const prev = idx > 0 ? filtered[idx - 1] : null
       const next = idx < filtered.length - 1 ? filtered[idx + 1] : null
